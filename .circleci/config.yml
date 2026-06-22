@@ -1,0 +1,42 @@
+version: 2.1
+
+# Runs the offline validation pipeline (build → typecheck → lint → test) for every
+# example and the shared tooling. The per-example `validate`/`push` commands are not
+# run here: they talk to a live integration layer and need credentials.
+
+jobs:
+  validate:
+    docker:
+      # Node >= 22.13 (pnpm 11.8 requires it).
+      - image: cimg/node:22.13
+    steps:
+      - checkout
+      - run:
+          name: Install pnpm
+          # Install pnpm directly with npm rather than via Corepack: the Corepack
+          # bundled in this image has outdated signing keys and rejects current pnpm
+          # releases ("Cannot find matching keyid"). `--force` overwrites the image's
+          # pre-existing Corepack pnpm shim; sudo because the global bin dir is root-owned.
+          # Version matches the `packageManager` field in package.json.
+          command: sudo npm install --global --force pnpm@11.8.0
+      - run:
+          name: Install dependencies
+          command: pnpm install --frozen-lockfile
+      - run:
+          name: Build
+          command: pnpm build
+      - run:
+          name: Typecheck
+          command: pnpm typecheck
+      - run:
+          name: Lint
+          command: pnpm lint
+      - run:
+          name: Test
+          command: pnpm test
+
+workflows:
+  # No branch filter: CircleCI runs this on every push, covering PR branches and main.
+  validate:
+    jobs:
+      - validate

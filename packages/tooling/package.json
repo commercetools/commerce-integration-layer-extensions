@@ -1,0 +1,32 @@
+{
+  "name": "@example-extensions/tooling",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ee-ext": "./bin/ee-ext.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@apollo/composition": "^2.14.1",
+    "@apollo/gateway": "^2.14.1",
+    "@apollo/subgraph": "^2.14.1",
+    "@envelop/apollo-federation": "^8.1.1",
+    "esbuild": "^0.28.0",
+    "graphql": "^16.9.0",
+    "graphql-yoga": "^5.21.2",
+    "typescript": "^5.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "vitest": "^4.1.8"
+  }
+}

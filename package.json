@@ -1,0 +1,35 @@
+{
+  "name": "integration-layer-extension-examples",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r test",
+    "dev:server-time": "pnpm --filter @example-extensions/server-time dev",
+    "dev:loyalty-points": "pnpm --filter @example-extensions/loyalty-points dev",
+    "dev:price-discount": "pnpm --filter @example-extensions/price-discount dev",
+    "dev:address-format": "pnpm --filter @example-extensions/address-format dev",
+    "dev:algolia-recommendations": "pnpm --filter @example-extensions/algolia-recommendations dev",
+    "validate:server-time": "pnpm --filter @example-extensions/server-time validate",
+    "validate:loyalty-points": "pnpm --filter @example-extensions/loyalty-points validate",
+    "validate:price-discount": "pnpm --filter @example-extensions/price-discount validate",
+    "validate:address-format": "pnpm --filter @example-extensions/address-format validate",
+    "validate:algolia-recommendations": "pnpm --filter @example-extensions/algolia-recommendations validate",
+    "push:server-time": "pnpm --filter @example-extensions/server-time push",
+    "push:loyalty-points": "pnpm --filter @example-extensions/loyalty-points push",
+    "push:price-discount": "pnpm --filter @example-extensions/price-discount push",
+    "push:address-format": "pnpm --filter @example-extensions/address-format push",
+    "push:algolia-recommendations": "pnpm --filter @example-extensions/algolia-recommendations push"
+  },
+  "devDependencies": {
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0"
+  }
+}

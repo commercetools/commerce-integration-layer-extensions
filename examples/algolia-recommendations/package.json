@@ -1,0 +1,21 @@
+{
+  "name": "@example-extensions/algolia-recommendations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "ee-ext build",
+    "dev": "ee-ext serve",
+    "validate": "ee-ext validate",
+    "push": "ee-ext push",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@example-extensions/tooling": "workspace:*",
+    "algoliasearch": "^5.55.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}
