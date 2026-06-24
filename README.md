@@ -1,422 +1,649 @@
 # example-extensions
 
-Example **extension** templates for the commercetools integration layer — the
-merchant subgraph code the integration layer runs — plus the tool that builds,
-validates, and publishes it.
+Templates and tooling for writing extensions to the commercetools integration
+layer.
 
-This is **not a deployed service**. It is a set of small authored artifacts (the
-example templates under `examples/*`) and a shared tool (`ee-ext`) that uploads a
-built bundle into the integration layer's per-project object store. The integration
-layer's runtime fetches it from there and serves it as a federated subgraph.
+An extension is a small GraphQL subgraph you write. It adds fields and types to the
+API the integration layer already serves for your project: a new root query, an
+extra field on `Product`, a value derived from data the integration layer owns, or
+a field that calls an external service. You write the SDL and the resolvers, run
+`pnpm push`, and the merged schema goes live with no redeploy.
 
-## Getting started
+There is nothing to run here. You get five example extensions under `examples/*`
+and a CLI, `ee-ext`, that builds your bundle and hands it to the integration layer,
+which serves it as a federated subgraph.
 
-Onboarding a project to the integration layer has two steps — one on the
-commercetools side, one on yours.
+## Contents
 
-### 1. commercetools enables the integration layer for your project
+- [How it fits together](#how-it-fits-together)
+- [Quickstart](#quickstart)
+- [Example templates](#example-templates)
+- [Schema mechanics](#schema-mechanics)
+- [Resolver mechanics](#resolver-mechanics)
+- [Configuring your extension securely](#configuring-your-extension-securely)
+- [Develop locally (`serve`)](#develop-locally-serve)
+- [Validate & publish](#validate--publish)
+- [Config (`.env`)](#config-env)
+- [Layout](#layout)
+- [The pipeline](#the-pipeline)
+- [Flow diagram](#flow-a-storefront-product-search-through-the-algolia-override)
 
-Ask your commercetools contact to enable the integration layer for your project.
-Once it's enabled, your project is served by the integration layer — it exposes the
-project's GraphQL endpoint and accepts the extension you publish from this
-repository. There is nothing to install on your side for this step.
+## How it fits together
 
-### 2. Configure and publish your extension
+You write one file. `ee-ext` publishes it. The integration layer composes your
+subgraph with its own schema and serves the result as a single GraphQL API that
+storefronts, the Merchant Center, and your own apps all query.
 
-With the integration layer enabled, you author, configure, and publish an extension:
+```mermaid
+flowchart LR
+    Author["Your extension<br/>extension.ts"]
+    Tool["ee-ext"]
+    IL["Integration layer<br/>(merged GraphQL API)"]
+    Client["Storefronts & apps"]
 
-1. **Create an API Client.** In the Merchant Center (Settings → Developer settings →
-   API clients), create an API Client for your project with the `manage_project`
-   scope. Its credentials authorize publishing.
-2. **Set up this repository.** Clone it and run `pnpm install`, then copy
-   `.env.example` to `.env` and fill in `INTEGRATION_LAYER_URL`, `CTP_PROJECT_KEY`,
-   `CTP_AUTH_URL` (the auth host for your project's region), and the
-   `CTP_CLIENT_ID` / `CTP_CLIENT_SECRET` from step 1. See [Config](#config).
-3. **Author your extension.** Pick the [example template](#five-example-templates)
-   closest to what you want to build and edit its `src/extension.ts`. You can develop
-   against a live, queryable server with `pnpm dev` — see
-   [Develop locally](#develop-locally-serve).
-4. **Configure extension settings, if any.** If your extension reads runtime settings
-   or secrets — e.g. the Algolia keys in `algolia-recommendations` — set them as your
-   project's extension configuration; the resolver reads them from `ctx.config` at
-   runtime (secrets are stored encrypted and never baked into the bundle). Templates
-   that need no settings skip this step.
-5. **Validate and publish.** From the example's directory, run `pnpm validate` to
-   confirm it composes with your project, then `pnpm push` to publish it. The
-   integration layer serves the updated extension right away — no redeploy.
+    Author --> Tool
+    Tool -->|publish| IL
+    Client -->|query| IL
+```
 
-The sections below cover each piece in more detail.
+- `extension.ts` is your subgraph: a `typeDefs` SDL string and a `resolvers` object.
+- `ee-ext` bundles it, validates it against your project, and pushes it. Your
+  `manage_project` client authorizes the push.
+- The integration layer stores the bundle, composes it with its own schema, and
+  serves the merged API. It also holds the commercetools credentials, so your
+  resolvers never touch a CT token.
 
-## Five example templates
+## Quickstart
 
-This repository ships **five independent, project-agnostic example extensions**, each
-a self-contained template showing one way a subgraph contributes to the supergraph:
+Two steps: commercetools turns the integration layer on for your project, then you
+publish.
 
-| Example | Path | Pattern |
+First, ask your commercetools contact to enable the integration layer for your
+project. Once it is on, the project's GraphQL endpoint is live and ready to accept
+extensions. Nothing to install for this part.
+
+Then publish:
+
+```bash
+# Clone and install (once)
+git clone <this-repo> && cd integration-layer-extension-examples
+pnpm install
+
+# Point at your project (once); see "Config (.env)" below
+cp .env.example .env
+$EDITOR .env            # INTEGRATION_LAYER_URL, CTP_PROJECT_KEY, CTP_AUTH_URL, CTP_CLIENT_ID/SECRET
+
+# Work inside the template closest to what you want
+cd examples/server-time
+pnpm dev                # live GraphiQL at :4000; edit src/extension.ts, hot-reloads
+pnpm validate           # composes against YOUR project, reports collisions/breaking changes
+pnpm push               # builds + validates, then publishes; live immediately
+```
+
+The client in `CTP_CLIENT_ID`/`CTP_CLIENT_SECRET` needs the `manage_project` scope.
+Create one under Merchant Center → Settings → Developer settings → API clients.
+That scope is what authorizes a push, and only `validate` and `push` use it.
+
+## Example templates
+
+Five standalone templates, each showing one way a subgraph can contribute to the
+graph. Pick the closest one and edit its `src/extension.ts`. The
+`build → validate → push` flow is identical from any of their directories.
+
+| Template | Pattern | Start here when you want to |
 | --- | --- | --- |
-| **server-time** | `examples/server-time` | A brand-new type + root field (`Query.serverTime`). Purely additive — shares nothing with the integration layer, so composition is trivial. |
-| **loyalty-points** | `examples/loyalty-points` | A field on an EXISTING entity (`Product.loyaltyPoints`) via `@interfaceObject` — attaches to every product by its `id` without enumerating concrete product types. Computed from an *argument*, so it needs nothing from the product but its identity. |
-| **price-discount** | `examples/price-discount` | A field on a nested object (`ProductPrice.discountedAmount`) computed from the object's OWN data — the price's `value.centAmount`, pulled in with `@requires`. Shows the next step beyond loyalty-points: depending on fields the integration layer owns, without re-declaring or resolving them. |
-| **address-format** | `examples/address-format` | A field on a shared, embedded nested object (`Address.formatted`) computed via `@requires` from the address's own *scalar* fields — like price-discount but the required data is plain scalars on the type, not a nested value type. `Address` is shared across customer/BU/cart/order, so the field appears on every address. |
-| **algolia-recommendations** | `examples/algolia-recommendations` | A field on an existing entity (`Product.recommendations`) that calls an EXTERNAL service — Algolia — using the **official `algoliasearch` SDK directly, with no special imports**. The runtime exposes a global `fetch` whose outbound requests are limited to an operator-configured allowlist of hosts (Algolia's by default). |
+| **server-time** | New type + root field (`Query.serverTime`) | add a brand-new query or type that shares nothing with the integration layer |
+| **loyalty-points** | Field on an entity from an *argument* (`Product.loyaltyPoints`) | add a field to every product, computed without reading any product data |
+| **price-discount** | Field from the object's own data via `@requires` (`ProductPrice.discountedAmount`) | compute from a field the integration layer owns (a nested value) |
+| **address-format** | `@requires` over scalar fields (`Address.formatted`) | compute from plain scalar fields the integration layer owns |
+| **algolia-recommendations** | External service + field `@override` (`Product.recommendations`, `Query.productSearch`) | call out to a vendor API, and/or take over an existing field |
 
-A developer **works inside one example**: edit its `src/extension.ts`, then run the
-shared `build → validate → push` flow from that directory. The templates carry no
-project config — the project a template is pushed to is supplied by the one shared
-root `.env` (see Config), so any template can be pushed to any project.
+> Each project holds one bundle, so a second push replaces the first. The templates
+> are not meant to run side by side, so push one per project. To ship several
+> patterns at once, combine their `typeDefs` and `resolvers` in a single file.
 
-> The object store holds **one bundle per project**, so pushing a second template to
-> the same project **replaces** the first. The five examples are independent
-> templates, not co-deployed — push one (per project) at a time, or each to its own
-> project.
+## Schema mechanics
+
+`typeDefs` is a Federation v2 SDL string. Start it by importing the federation spec
+and the directives you use:
+
+```graphql
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@requires", "@external"])
+```
+
+### Directives
+
+| Directive | Use it to | Notes |
+| --- | --- | --- |
+| `@link` | import the federation spec and the directives below | always the first line of `typeDefs` |
+| `@key(fields: "id")` | mark a type as an entity you're attaching to | re-declare only the key field(s) |
+| `@interfaceObject` | attach a field to every `Product` at once | `Product` only (it is an entity *interface*); saves enumerating concrete product types |
+| `extend type` | attach a field to an object entity (`Order`, `Cart`, …) | the non-`Product` equivalent of `@interfaceObject` |
+| `@external` | reference a field the integration layer owns | for `@key`/`@requires` only; you never resolve it |
+| `@requires(fields: "…")` | pull integration-layer-owned data into your resolver | the planner resolves it onto the resolver's `parent` |
+| `@override(from: "integration-layer")` | take over an existing field | re-declare referenced types; the integration layer still serves it directly |
+| `@shareable` | co-own a field with the integration layer | rarely needed; prefer a new field. An unshared duplicate fails composition |
+
+The rule of thumb is to add new fields rather than redefine existing ones. If your
+field only needs an integration-layer field as input, reference it with `@external`
+and `@requires` instead of resolving it yourself. If you genuinely need to replace
+a field, `@override` it.
+
+The patterns below each pair a minimal SDL with its resolver;
+[Resolver mechanics](#resolver-mechanics) covers the resolver side.
+
+### A brand-new field or type
+
+Nothing here is shared with the integration layer, so it always composes.
+(`examples/server-time`.)
+
+```graphql
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3")
+
+type Query {
+  serverTime: ServerTime!
+}
+type ServerTime { iso: String!  epochMillis: Float!  timezone: String! }
+```
+
+```ts
+export const resolvers = {
+  Query: {
+    serverTime: (_parent, _args, ctx) => {
+      const ms = ctx.now();
+      return { iso: new Date(ms).toISOString(), epochMillis: ms, timezone: "UTC" };
+    },
+  },
+};
+```
+
+### A field on a product (or any entity)
+
+The integration layer exposes its top-level resources as federation entities keyed
+by `id`, so you can attach a field to one by re-declaring just its key. `Product` is
+an entity interface, so `@interfaceObject` lets you hit every product at once.
+(`examples/loyalty-points`.)
+
+```graphql
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@interfaceObject"])
+
+type Product @key(fields: "id") @interfaceObject {
+  id: ID!
+  loyaltyPoints(price: Float!): Int!
+}
+```
+
+```ts
+export const resolvers = {
+  Product: {
+    // parent is the entity stub the integration layer resolved: { id }
+    loyaltyPoints: (_product, { price }) => Math.floor(price),
+  },
+};
+```
+
+For the object entities (`Order`, `Cart`, `Customer`, and so on) use `@key` with
+`extend type` instead. The [entity catalog](#entity-catalog) lists them all.
+
+```graphql
+extend type Order @key(fields: "id") { id: ID!  priorityScore: Int! }
+```
+
+### A field computed from data the integration layer owns
+
+When your field depends on data the integration layer owns, mark those fields
+`@external` and name them in `@requires`. The planner fetches them and passes them
+to your resolver, so you read the data without owning it. (`examples/price-discount`
+for a nested value, `examples/address-format` for scalars.)
+
+```graphql
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@requires", "@external"])
+
+type Money { centAmount: Int! @external }
+type ProductPrice @key(fields: "id") {
+  id: ID!
+  value: Money! @external
+  discountedAmount(percentOff: Int!): Int! @requires(fields: "value { centAmount }")
+}
+```
+
+```ts
+export const resolvers = {
+  ProductPrice: {
+    // parent carries { id } plus the @requires fields: { value: { centAmount } }
+    discountedAmount: (price, { percentOff }) => {
+      const pct = Math.min(100, Math.max(0, percentOff));
+      return Math.round((price.value.centAmount * (100 - pct)) / 100);
+    },
+  },
+};
+```
+
+### A field backed by an external service
+
+Use the global `fetch`, or any fetch-based SDK (see
+[runtime constraints](#runtime-constraints)). Outbound calls are restricted to a
+host allowlist the operator configures. Pull credentials from
+[`ctx.config`](#configuring-your-extension-securely) rather than hard-coding them,
+and make the field nullable so an outage degrades to `null` instead of taking down
+the whole product. (`examples/algolia-recommendations`.)
+
+```graphql
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@interfaceObject"])
+
+type Product @key(fields: "id") @interfaceObject {
+  id: ID!
+  recommendations: [ProductRecommendation!]   # nullable list, safe to degrade
+}
+type ProductRecommendation { product: Product!  reason: String! }
+```
+
+```ts
+import { algoliasearch } from "algoliasearch";        // official SDK, no special import
+
+export const resolvers = {
+  Product: {
+    recommendations: async (product, _args, ctx) => {
+      const { ALGOLIA_APP_ID, ALGOLIA_API_KEY, ALGOLIA_INDEX_NAME } = ctx.config;
+      if (!ALGOLIA_APP_ID || !ALGOLIA_API_KEY || !ALGOLIA_INDEX_NAME) return null;  // not configured
+      try {
+        const client = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_API_KEY);
+        const res = await client.initRecommend().getRecommendations({
+          requests: [{ indexName: ALGOLIA_INDEX_NAME, model: "related-products", objectID: product.id, maxRecommendations: 5 }],
+        });
+        return (res.results?.[0]?.hits ?? [])
+          .map((h) => ("objectID" in h ? h.objectID : undefined))
+          .filter((id) => typeof id === "string")
+          // Return product STUBS; the router resolves the rich data (see below).
+          .map((id) => ({ product: { id }, reason: "related product" }));
+      } catch {
+        return null;   // Algolia unavailable, degrade
+      }
+    },
+  },
+};
+```
+
+The resolver returns `{ product: { id } }`, a stub. Whenever a field's type is an
+entity, return only the `id` and let the router fill in the rest from the
+integration layer (the join target), so callers get back the same rich shape. More
+on this under [returning entities](#returning-entities-stubs).
+
+### Taking over an existing field (`@override`)
+
+To replace a field the integration layer already serves, say to run
+`Query.productSearch` off your own search engine, claim it with
+`@override(from: "integration-layer")`. Federation cannot import types across
+subgraphs, so you have to re-declare the field's argument and result types and
+`@override` each one. The integration layer keeps serving the field directly; the
+override only changes who owns it in the routed graph.
+(`examples/algolia-recommendations`.)
+
+```graphql
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@override"])
+
+type Query {
+  productSearch(input: ProductSearchInput!): ProductSearchResult! @override(from: "integration-layer")
+}
+type ProductSearchResult {
+  items: [Product!]! @override(from: "integration-layer")
+  total: Int!        @override(from: "integration-layer")
+  # …re-declare every field you return, each @override(from: "integration-layer")
+}
+# …plus the input types your field references
+```
+
+Return product stubs in `items` and the router fills in the rest, so callers see no
+difference. The
+[flow diagram](#flow-a-storefront-product-search-through-the-algolia-override)
+traces a full request.
+
+### Entity catalog
+
+These are the only types you can extend. All are keyed by `id`; the ones with a
+`key` field can also be keyed by `key`, letting you attach by the readable handle
+instead of the opaque id.
+
+| Type | `id` key | `key` key | Notes |
+| --- | --- | --- | --- |
+| `Product` | yes | optional | entity interface, use `@interfaceObject` |
+| `Category`, `Quote`, `QuoteRequest`, `Wishlist`, `PurchaseList`, `ApprovalRule`, `RecurrencePolicy` | yes | optional | `@key` + `extend type`; `key` resolves only where present |
+| `BusinessUnit`, `AssociateRole` | yes | yes (non-null) | always keyable by `key` |
+| `Cart`, `Order`, `Customer`, `Review`, `ApprovalFlow`, `RecurringOrder` | yes | n/a | `id`-only |
+
+A handful of nested objects are keyed too, just so you can decorate them with
+`@requires`:
+
+| Type | Keys | Notes |
+| --- | --- | --- |
+| `ProductPrice` | `id` | a product's price entry |
+| `Address` | `id` and `key` (both nullable) | shared across customer/BU/cart/order, so your field appears on every address; keys are nullable because inline cart/order addresses may lack an `id` |
+
+Keying by an optional `key` is a judgement call. The field only resolves for
+instances that actually have one, and a non-null field nulls out where the key is
+missing. Stick with `id` unless you specifically need inline addresses, which may
+carry only a `key`.
+
+Everything else is off limits: value types (`Money`, images), reference wrappers
+(`*Ref`), embedded sub-objects (`LineItem`), and product variants (whose `id` is a
+per-product `Int`, not a global key).
+
+## Resolver mechanics
+
+A resolver is a function at `resolvers[Type][field]`, with the standard GraphQL
+signature `(parent, args, ctx)`:
+
+```ts
+fieldName: (parent, args, ctx) => result            // sync
+fieldName: async (parent, args, ctx) => result       // async (e.g. a fetch)
+```
+
+- `parent` is whatever the field hangs off. Root fields (`Query.*`) ignore it; on an
+  entity field it is the representation the integration layer resolved, `{ id }`,
+  plus anything you pulled in with `@requires`. So
+  `@requires(fields: "value { centAmount }")` gives you `{ id, value: { centAmount } }`
+  and nothing you did not ask for.
+- `args` is the field's arguments, typed as you declared them in the SDL.
+- `ctx` carries the host's capabilities. The runtime is sandboxed (see
+  [Runtime constraints](#runtime-constraints)), so anything beyond plain computation
+  and `fetch` reaches you here: `ctx.now()` returns the current epoch-millis (a
+  convenience; `Date.now()` works too), and `ctx.config` is the per-project
+  `{ key: value }` config map (secrets decrypted host-side, read-only, empty when
+  nothing is set; see [Configuring securely](#configuring-your-extension-securely)).
+
+### Returning entities (stubs)
+
+When a field returns an entity (a `Product`, or a list of them), return just its
+`id`. The router re-enters the integration layer by that key (it is a join target
+for `Product`) and resolves whatever fields the caller asked for. Your resolver
+decides which entities to return and in what order; the integration layer stays the
+source of truth for their contents. Non-entity types you return in full, as usual.
+
+### Errors and graceful degradation
+
+Throw a `GraphQLError` (imported from `graphql`, the one package the host provides)
+to fail a field on purpose. For anything that can fail transiently, like an
+external call, prefer a nullable field and return `null` on failure so the rest of
+the response survives; a non-null field that throws nulls out its parent instead.
+The Algolia template degrades both `recommendations` and the search result this way.
+
+### Runtime constraints
+
+Resolvers run in a sandbox, not a full Node process. esbuild bundles `extension.ts`
+and everything it imports into one self-contained CommonJS module.
+
+- **Available:** the usual web-platform globals (`fetch`, allowlisted;
+  `AbortController`; `setTimeout`/`clearTimeout`; `Date`; `Math`;
+  `TextEncoder`/`TextDecoder`; `URL`). Most SDKs work unmodified.
+- **Off limits:** `process`/`process.env`, `fs`, `child_process`, raw sockets, Node
+  built-ins (`node:*`), `eval`, `new Function`. Config comes from `ctx.config`, not
+  the environment.
+- **Imports:** local modules and npm SDKs get inlined; `graphql` stays external
+  (the host provides it, and a second copy would break its `instanceof` checks).
+- **Network:** only through `fetch`, only to allowlisted hosts, and anything else is
+  refused before the socket opens. Your SDK has to be fetch-based, since there is no
+  Node `http`/`https` for it to fall back to.
+
+`pnpm validate` catches most of these statically before you push.
+
+## Configuring your extension securely
+
+Most extensions need some per-project settings: an API key, a hostname, an index
+name. Do not hard-code them. The bundle is committed source and identical across
+projects, so settings belong in your project's extension configuration, which your
+resolver reads from `ctx.config`:
+
+```ts
+// In your resolver: a flat, read-only string map. Secrets are decrypted host-side.
+const apiKey = ctx.config.MY_API_KEY;
+const host   = ctx.config.MY_SERVICE_HOST;
+if (!apiKey) return null;          // degrade gracefully when unset
+```
+
+### Plain values vs. secrets
+
+Every entry is `{ key, value, secret? }`. A plain entry (the default) is something
+non-sensitive like a hostname or a feature flag, stored and read back as-is. A
+secret entry (`secret: true`) is a credential: it is encrypted at rest, never
+returned by any read (you see the key but not the value), and never written into
+your bundle. The host decrypts it only when resolving a request.
+
+Either way it shows up in `ctx.config` as a plain string. The `secret` flag governs
+storage and exposure, not how you read it.
+
+### Setting configuration
+
+Both paths require the `manage_project` scope, the same as publishing.
+
+The easy way is the integration layer's Merchant Center console, which has a
+per-project Extension configuration view for adding entries and flagging the secret
+ones. No tokens to juggle.
+
+For automation, hit the config endpoint directly. Send `[{ key, value, secret? }]`
+to `…/api/<project>/extensions/config` with a `manage_project` bearer token:
+
+```bash
+# Mint a manage_project token (standard commercetools client-credentials flow)
+TOKEN=$(curl -s -u "$CTP_CLIENT_ID:$CTP_CLIENT_SECRET" \
+  -d grant_type=client_credentials -d "scope=manage_project:$CTP_PROJECT_KEY" \
+  "$CTP_AUTH_URL/oauth/token" | node -e 'process.stdin.on("data",d=>console.log(JSON.parse(d).access_token))')
+
+# Replace the WHOLE config (PUT): the posted set becomes the project's entire config
+curl -X PUT "$INTEGRATION_LAYER_URL/api/$CTP_PROJECT_KEY/extensions/config" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '[
+        { "key": "ALGOLIA_APP_ID",     "value": "ABC123" },
+        { "key": "ALGOLIA_INDEX_NAME", "value": "products" },
+        { "key": "ALGOLIA_API_KEY",    "value": "search-only-key", "secret": true }
+      ]'
+
+# Upsert a few entries without touching the rest (PATCH); value:null deletes a key
+curl -X PATCH "$INTEGRATION_LAYER_URL/api/$CTP_PROJECT_KEY/extensions/config" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '[{ "key": "ALGOLIA_API_KEY", "value": "rotated-key", "secret": true },
+       { "key": "OLD_SETTING", "value": null }]'
+
+# List current entries (secret VALUES are withheld; you see the key + secret:true)
+curl "$INTEGRATION_LAYER_URL/api/$CTP_PROJECT_KEY/extensions/config" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+| Method | Effect |
+| --- | --- |
+| `GET` | list entries, secret values withheld (you get `{ key, secret: true }`) |
+| `PUT` | replace the entire config with the posted array |
+| `PATCH` | upsert the posted entries; `value: null` deletes that key, the rest untouched |
+
+Config changes take effect on their own. You do not republish the bundle to pick up
+new values.
+
+### Configuring for local development
+
+`pnpm dev` has no integration layer to read from, so it pulls `ctx.config` from
+`EXTENSION_CONFIG_*` variables: `EXTENSION_CONFIG_ALGOLIA_API_KEY` becomes
+`ctx.config.ALGOLIA_API_KEY`. Set them in your shell or a gitignored env file:
+
+```bash
+EXTENSION_CONFIG_ALGOLIA_APP_ID=ABC123 \
+EXTENSION_CONFIG_ALGOLIA_INDEX_NAME=products \
+EXTENSION_CONFIG_ALGOLIA_API_KEY=search-only-key \
+  pnpm dev
+```
+
+### Good practice
+
+- Use least-privilege credentials: a search-only Algolia key for a search resolver,
+  never an admin key.
+- Treat missing config as "not configured" and return `null` or an empty result, so
+  an unconfigured project still serves everything else. The templates all do this.
+- Keep secrets out of `extension.ts`, out of any committed `.env`, and out of the
+  bundle. The `.env` here holds only publish credentials, and it is gitignored.
+
+## Develop locally (`serve`)
+
+`ee-ext serve` (`pnpm dev`) runs your example as a live GraphQL server with GraphiQL
+and esbuild watch, so you get a real inner loop. It builds the same bundle the
+runtime loads, serves it as an Apollo Federation v2 subgraph, and calls your
+resolvers with the same `ctx` they would get in production (`ctx.now()`, and
+`ctx.config` from `EXTENSION_CONFIG_*`). Save the file and the schema reloads.
+
+```bash
+cd examples/loyalty-points
+pnpm dev                        # standalone: the extension subgraph at :4000/graphql
+pnpm dev --compose              # + the FULL merged schema (extension + integration layer)
+pnpm dev --gateway              # /graphql becomes a federated gateway over both
+pnpm dev --gateway --port 4005  # (pick a port)
+```
+
+> Pass flags from inside the example (`pnpm dev --gateway`). The root
+> `pnpm dev:<example>` shortcut only covers the default mode; flags do not survive
+> its two pnpm layers.
+
+- **standalone** (offline): query your fields directly, or exercise entity-extension
+  fields like `Product.loyaltyPoints` through the `_entities` query. No setup.
+- **`--compose`**: pulls your project's integration-layer SDL and composes it with
+  your extension, exactly as publish does. The merged schema is browsable at
+  `/composed`, with SDL at `/schema.graphql` and `/supergraph.graphql`. A
+  non-composable edit logs the collisions and keeps the last good schema up; fix and
+  save to recompose.
+- **`--gateway`**: turns `/graphql` into a real federated gateway over your local
+  extension plus the deployed integration layer. A query like
+  `{ product(id:…) { name loyaltyPoints(price:…) } }` resolves `name` upstream and
+  `loyaltyPoints` locally in one request, the production setup in miniature. It mints
+  an anonymous session for its upstream calls and exposes the raw subgraph at
+  `/_extension`.
+
+> `--compose` and `--gateway` reach the real integration layer, so point
+> `INTEGRATION_LAYER_URL` at your deployment. Standalone needs nothing.
+
+## Validate & publish
+
+Both `validate` and `push` run the bundle through two gates before it can land.
+
+Local checks run offline and always apply:
+
+1. **Static analysis** of your source, rejecting things that will not run in the
+   sandbox (`process`, Node imports, `eval`). It is a lint to catch mistakes early,
+   not the security boundary; the runtime enforces that.
+2. **Shape and coherence**: a non-empty `typeDefs`, a `resolvers` object, and a
+   resolver for every type and field the SDL declares (a typo that would silently
+   no-op gets caught here).
+
+Remote checks need `.env` and run against your project, the same way publishing
+does:
+
+3. **Composition**: your extension is composed with your project's live
+   integration-layer subgraph, surfacing bad SDL and collisions (a type or field
+   that already exists with a different shape). This is the only place composition
+   happens.
+4. **Breaking-change detection** against your currently published schema, catching a
+   removed or narrowed field that consumers rely on. A project's first extension has
+   no baseline, so only check 3 applies.
+
+A failure stops the push with a specific message. If a breaking change is deliberate
+and coordinated, skip the remote checks (3 and 4):
+
+```bash
+EE_FORCE=1 pnpm push     # reliable form through the pnpm script chain
+```
+
+The local checks (1 and 2) always fail hard. A bundle that will not load, reaches
+outside the sandbox, or has resolvers that do not match its SDL is broken no matter
+what you intended. (`ee-ext push --force` works when you call the bin directly, but
+pnpm eats a bare `--force`, so use `EE_FORCE`.)
+
+### All commands
+
+Repo-wide (from the repo root):
+
+```bash
+pnpm install      # install dev tooling (once)
+pnpm build        # esbuild → each example's dist/extension.js
+pnpm typecheck    # tsc --noEmit across all packages
+pnpm lint         # eslint . (shared root config)
+pnpm test         # vitest: build + validate + per-example tests
+
+# Per-example validate/push from the root (need .env):
+pnpm validate:<name>   pnpm push:<name>   # <name> = server-time | loyalty-points | …
+```
+
+Per-example (the day-to-day flow), from inside `examples/<name>`:
+
+```bash
+pnpm dev        # live server (above)
+pnpm build      # build dist/extension.js
+pnpm validate   # local + remote validation
+pnpm push       # build + validate + publish
+```
+
+`build`/`typecheck`/`lint`/`test` are offline; `validate`/`push` talk to the
+integration layer and load the shared root `.env`.
+
+## Config (`.env`)
+
+The templates carry no project config of their own. The target project lives in one
+shared `.env` at the repo root (copy `.env.example`):
+
+| Var | What it is |
+| --- | --- |
+| `INTEGRATION_LAYER_URL` | base URL of the integration layer (defaults to the deployed instance; `http://localhost:8080` for a local one) |
+| `CTP_PROJECT_KEY` | the project to push to (must be one the integration layer serves), not a secret |
+| `CTP_AUTH_URL` | the commercetools auth host for your project's region (used to mint the token) |
+| `CTP_CLIENT_ID` / `CTP_CLIENT_SECRET` | a `manage_project` API Client for that project; only the secret is sensitive |
+
+To target a different project, repoint `.env` or override the vars inline
+(`CTP_PROJECT_KEY=… pnpm push`). The `.env` is gitignored; keep real credentials out
+of git.
 
 ## Layout
 
 ```
 integration-layer-extension-examples/
 ├── .env.example                 # the ONE shared target-project config (no template data)
-├── eslint.config.js             # shared flat config; `pnpm lint` runs `eslint .` from here
+├── eslint.config.js             # shared flat config; `pnpm lint` runs `eslint .`
 ├── packages/
-│   └── tooling/                 # @example-extensions/tooling — the shared flow
+│   └── tooling/                 # @example-extensions/tooling, the shared flow
 │       ├── bin/ee-ext.mjs       #   the `ee-ext` bin (build|validate|push|serve)
-│       ├── src/                 #   build · staticAnalysis · loadBundle · validateBundle
-│       │                        #   · remoteValidate · compose · gateway · serve · push
-│       │                        #   · ctToken · env · cli · index
-│       └── tests/               #   build+validate pipeline + per-example smoke tests
+│       └── src/                 #   build, staticAnalysis, loadBundle, validateBundle,
+│                                #   remoteValidate, compose, gateway, serve, push, …
 └── examples/
     ├── server-time/             # @example-extensions/server-time
     │   └── src/extension.ts      #   the template (the only file you edit)
-    ├── loyalty-points/          # @example-extensions/loyalty-points
-    │   └── src/extension.ts
-    ├── price-discount/          # @example-extensions/price-discount
-    │   └── src/extension.ts
-    ├── address-format/          # @example-extensions/address-format
-    │   └── src/extension.ts
-    └── algolia-recommendations/ # @example-extensions/algolia-recommendations
-        └── src/extension.ts
+    ├── loyalty-points/
+    ├── price-discount/
+    ├── address-format/
+    └── algolia-recommendations/
 ```
 
-The `ee-ext` bin (from the tooling package, on each example's PATH because each
-example depends on it) resolves the template entry/outfile from the directory it is
-run in (`<example>/src/extension.ts` → `<example>/dist/extension.js`) and loads the
-shared root `.env` for the target project. So the same validated flow runs for
-whichever example you stand in.
+The `ee-ext` bin works out the template's entry and output from the directory you
+run it in (`<example>/src/extension.ts` → `<example>/dist/extension.js`) and loads
+the shared `.env`, so the same flow runs from any example.
 
 ## The pipeline
 
 ```
 examples/<name>  ──push──▶  integration layer            extensions runtime
   src/extension.ts          PUT /api/<project>/extensions   GET /api/<project>/extensions
-  → esbuild → dist/         (per-project object store) ────▶ build subgraph + serve
+  → esbuild → dist/         (per-project store) ──────────▶ build subgraph + serve
   → validate (local+remote) ─▶                               + (re)publish SDL
 ```
 
-1. Author the extension in an example's `src/extension.ts`. It exports an SDL string
-   (`typeDefs`) and a `resolvers` object. **esbuild** bundles it (and any local
-   helper modules it imports) into a single self-contained **CommonJS** module the
-   runtime can load with no bundler; only `graphql` stays an external import (the
-   host provides it). The runtime executes resolvers in a **restricted environment** —
-   not a full Node runtime — so they have no ambient `process`, `fs`, or raw sockets.
-   See the authoring constraints below.
-2. `pnpm push` (from the example dir) builds `dist/extension.js`, **validates it**
-   (see below) — both locally and against the integration layer — and, only if it
-   passes (or you force it), `PUT`s it into the integration layer's object store
-   (authenticating with a commercetools `manage_project` token — the route's trust
-   boundary). A broken or breaking bundle fails here, never reaching the store.
-3. The integration layer's runtime fetches the bundle from that store, serves the
-   subgraph, and publishes its SDL to the schema registry. So editing the file +
-   `pnpm push` changes the live extension with **no redeploy**.
-
-## Usage
-
-Repo-wide (run from the repo root):
-
-```bash
-pnpm install                    # install dev tooling (run once)
-pnpm build                      # esbuild → each example's dist/extension.js
-pnpm typecheck                  # tsc --noEmit across all packages
-pnpm lint                       # eslint . (shared root config)
-pnpm test                       # vitest — the build + validate + per-example tests
-
-# Per-example validate/push (need a target project — see Config). From the root:
-pnpm validate:server-time             pnpm push:server-time
-pnpm validate:loyalty-points          pnpm push:loyalty-points
-pnpm validate:price-discount          pnpm push:price-discount
-pnpm validate:address-format          pnpm push:address-format
-pnpm validate:algolia-recommendations pnpm push:algolia-recommendations
-EE_FORCE=1 pnpm push:server-time   # push even if integration-layer validation fails
-```
-
-Or work **inside an example** (the intended day-to-day flow):
-
-```bash
-cp .env.example .env             # set the target project once
-cd examples/server-time
-pnpm build / pnpm validate / pnpm push
-```
-
-> `validate` and `push` talk to the integration layer, so they load the shared
-> root `.env` (`INTEGRATION_LAYER_URL` + `CTP_*`). The plain
-> `build`/`typecheck`/`lint`/`test` checks stay offline.
-
-## Develop locally (`serve`)
-
-`ee-ext serve` (per example `pnpm dev`, from the root `pnpm dev:<example>`) runs
-the example as a **live, queryable GraphQL server** with esbuild watch and GraphiQL —
-the inner loop the build → validate → push flow lacked. It builds the same bundle,
-loads it, and serves an Apollo Federation v2 subgraph from its `typeDefs` +
-`resolvers`, invoking those resolvers with the same capability `ctx` (`now`/`config`)
-the runtime passes. Locally, `ctx.config` is sourced from `EXTENSION_CONFIG_*` env
-vars instead of the integration layer. Edit `src/extension.ts` and the served schema
-hot-reloads with no restart.
-
-```bash
-cd examples/loyalty-points
-
-pnpm dev                       # standalone: the extension subgraph at :4000/graphql
-pnpm dev --compose             # + the FULL merged schema (extension + integration layer)
-pnpm dev --gateway             # /graphql becomes a federated gateway over both
-pnpm dev --gateway --port 4005 # (pick a port)
-```
-
-> Pass flags from **inside the example** (`pnpm dev --gateway`). The root
-> `pnpm dev:<example>` shortcut is for the default (flagless) mode — flags don't
-> forward cleanly through its two pnpm layers.
-
-- **standalone** (offline): query the extension's own fields directly; exercise
-  entity-extension fields (e.g. `Product.loyaltyPoints`) through the federation
-  `_entities` query.
-- **`--compose`**: fetches the project's integration-layer subgraph SDL (the public
-  `GET /api/<project>/subgraph`) and composes it with your extension — the same
-  composition the integration layer runs on publish. Serves `/composed` (the
-  client-facing merged schema, browsable but not executable) and `/schema.graphql` +
-  `/supergraph.graphql` (SDL as text). A non-composable edit logs the exact federation
-  collisions and keeps serving; saving a fix recomposes.
-- **`--gateway`**: an **executable** federated gateway at `/graphql` (Apollo Gateway)
-  that routes each field to its owner — so `{ product(id:…) { name
-  loyaltyPoints(price:…) } }` resolves `name` from the integration layer and
-  `loyaltyPoints` from your **local** extension in one request, the production
-  topology in miniature. It mints an anonymous session for its integration-layer calls
-  and serves the raw extension subgraph at `/_extension`.
-
-> `--compose`/`--gateway` reach the project's integration layer; point
-> `INTEGRATION_LAYER_URL` at your deployed integration layer (it must expose
-> `GET /api/<project>/subgraph`). Standalone needs nothing.
-
-## Config
-
-The example templates are **project-independent** — they carry no project config. The
-project a template is pushed to lives in the single shared root `.env` (copy
-`.env.example`): `INTEGRATION_LAYER_URL`, `CTP_PROJECT_KEY`, `CTP_AUTH_URL`, and a
-commercetools client with `manage_project`. To push a template elsewhere, point that
-file at another project (or override `CTP_PROJECT_KEY` + its creds in the environment,
-e.g. `CTP_PROJECT_KEY=… pnpm push`).
-
-## Validation
-
-`pnpm push` (and `pnpm validate`) gate on the built bundle before it can reach the
-object store, in two layers.
-
-**Local** (`packages/tooling/src/validateBundle.ts`) — offline, always enforced. It
-checks only what the bundle author has and the remote layer can't see (the push sends
-the integration layer the SDL only, never the bundle):
-
-1. **static analysis** of the author's source — rejects the patterns that won't work
-   at runtime: the ambient `process`, imports of Node built-ins (`fs`, `crypto`,
-   `node:*`, …), and `eval`/`new Function`. This is a best-effort lint that catches
-   honest mistakes early; it is not the security boundary (the runtime enforces that).
-2. loads the built bundle and checks its **shape + coherence** — a non-empty
-   `typeDefs` string, a `resolvers` object, and every resolver type/field declared by
-   the SDL (a typo that would be a silent runtime no-op is rejected).
-
-It does **not** compose the subgraph: composition is the remote layer's job (below),
-which composes against the live integration layer exactly as it does on publish — an
-offline standalone compose would be a strictly weaker, redundant duplicate.
-
-**Remote** (`packages/tooling/src/remoteValidate.ts` → the integration layer's
-`POST /api/<project>/extensions/validate`) — needs `.env`:
-
-3. **composes the extension WITH the project's integration-layer subgraph**, exactly
-   the two-subgraph composition performed on publish. This is the only place the
-   extension is composed at all — it surfaces both malformed SDL and collisions with
-   the integration layer (e.g. the extension declaring a type or field name that
-   already exists with an incompatible shape);
-4. **rejects breaking changes** versus the project's currently published schema — a
-   removed or narrowed field that consumers depend on. The only no-baseline case is a
-   project's **first** extension (nothing published yet, so nothing to break) — there
-   step 3's composition check alone gates.
-
-A failure aborts the push with a precise message listing the composition errors or
-breaking changes. To upload anyway — e.g. a deliberate, coordinated breaking change —
-force it:
-
-```bash
-EE_FORCE=1 pnpm push             # force via env var — the reliable form through the pnpm script chain
-```
-
-`push.ts` also honours a `--force`/`-f` flag when the `ee-ext` bin is invoked directly
-(`ee-ext push --force`), but `EE_FORCE` is the form to use with the pnpm scripts — a
-bare `--force` would be swallowed by pnpm itself. Force bypasses only the **remote**
-verdict (steps 3–4); the local checks (1–2) always hard-fail — a bundle that won't
-load, whose source reaches for unavailable features, or whose resolvers don't match
-its SDL is broken regardless of intent.
-
-The local pipeline — real esbuild build of fixture sources fed to the real validator,
-happy path and every rejection, plus a per-example smoke test — is covered by
-`packages/tooling/tests/*.test.ts` (`pnpm test`); the remote compose/breaking-change
-logic is covered by the integration layer.
-
-## Authoring constraints
-
-An example's `src/extension.ts` (and any modules it imports) must:
-
-- export exactly `typeDefs` (a federation-v2 SDL **string**, including the `@link` to
-  the federation spec) and `resolvers` (a plain object);
-- import **local helper modules** (esbuild inlines them into the single-file bundle),
-  **npm SDKs** (also inlined — subject to the network note below), and, if needed,
-  **`graphql`** — the one host-provided package the runtime supplies (e.g. to throw a
-  `GraphQLError`). `graphql` is kept external, never inlined: a second copy of
-  graphql-js would break its `instanceof` checks.
-- run in a **restricted runtime** — not a full Node environment. Resolver code **must
-  not** touch `process`/`process.env`, `fs`, `child_process`, or raw sockets — they
-  are not available. It **may** use a standard web-platform surface, so an ordinary
-  SDK works with no special imports: `fetch` (allowlisted — see below),
-  `AbortController`, `setTimeout`/`clearTimeout`, `Date`, `Math`,
-  `TextEncoder`/`TextDecoder`, `URL`.
-- reach the network only via the global **`fetch`**, whose outbound requests are
-  limited to an **operator-configured allowlist of hosts** (Algolia's by default);
-  requests to anything else are refused before any socket opens. An SDK must be
-  **fetch-based**: the bundler selects a package's `fetch`/`worker` build (the runtime
-  provides no Node `http`/`https`), so a Node-`http`-only SDK won't work. Anything else
-  a resolver needs comes through its **context** (the third resolver argument):
-  - `ctx.now()` — current epoch-millis (a convenience; `Date.now()` works too);
-  - `ctx.config` — the per-project `{ key: value }` config, secrets decrypted
-    host-side. See `examples/algolia-recommendations`, which uses the official
-    `algoliasearch` SDK over the global `fetch` and reads its keys from `ctx.config`.
-
-  `pnpm validate` runs the static analysis above, so a source that reaches for an
-  unavailable feature fails locally, not at load time.
-
-The example templates show the ways a subgraph contributes, all composable with the
-integration-layer subgraph:
-
-- **own root fields / own types** — purely additive (`examples/server-time`:
-  `Query.serverTime` + the `ServerTime` type). Nothing is shared, so composition is
-  trivial.
-- **a field on an existing entity** (`examples/loyalty-points`:
-  `Product.loyaltyPoints`) — the integration layer exposes its top-level resources as
-  Federation entities keyed by `id`, so a subgraph can attach a field to them. Import
-  `@key` (and `@interfaceObject` where noted) in the `@link`, and re-declare only the
-  key field:
-  - **`Product`** is an entity *interface* — use `@interfaceObject` to attach a field
-    to *every* product at once (e.g. `Product.loyaltyPoints`), without enumerating the
-    concrete per-product-type objects.
-    ```graphql
-    type Product @key(fields: "id") @interfaceObject { id: ID!  loyaltyPoints(price: Float!): Int! }
-    ```
-  - **object entities** — `Cart`, `Order`, `Customer`, `BusinessUnit`, `Category`,
-    `Quote`, `QuoteRequest`, `Review`, `Wishlist`, `PurchaseList`, `ApprovalFlow`,
-    `ApprovalRule`, `RecurringOrder`, `RecurrencePolicy`, `AssociateRole` — use plain
-    `@key` + `extend type`:
-    ```graphql
-    extend type Order @key(fields: "id") { id: ID!  priorityScore: Int! }
-    ```
-
-  Every entity is keyed by `id`. Every entity that **has a `key` field** is *also*
-  keyed by `key`, so you may attach by the human-readable handle instead
-  (`@key(fields: "key")` + re-declare `key`). `BusinessUnit` and `AssociateRole` have
-  a non-null `key` (always present); on the others (`Product`, `Category`, `Quote`,
-  `QuoteRequest`, `Wishlist`, `PurchaseList`, `ApprovalRule`, `RecurrencePolicy`)
-  `key` is optional — keying by it is **your call as the author**: the field resolves
-  only for instances that actually have a key (an instance with `key: null` can't be
-  reached by that path, and a non-null extension field would null-propagate). Entities
-  with no `key` field at all (`Cart`, `Order`, `Customer`, `Review`, `ApprovalFlow`,
-  `RecurringOrder`) are keyed by `id` only.
-
-  Only these entities are keyed. Value types (`Money`, images), reference wrappers
-  (`*Ref`), embedded sub-objects (`LineItem`), and product *variants* (their `id` is a
-  per-product `Int`, not a global key) are **not** entities and can't be extended this
-  way.
-- **a field on a nested object, computed from its own data** (`examples/price-discount`:
-  `ProductPrice.discountedAmount`; `examples/address-format`: `Address.formatted`) — a
-  few nested objects that aren't top-level resources are keyed too, purely so you can
-  decorate them: currently **`ProductPrice`** (a product's price), keyed by `id`, and
-  **`Address`** (a customer's/BU's/cart's/order's address), keyed by `id` *and* its
-  `key` (so you may attach by the human-readable handle — e.g. `@key(fields: "key")` +
-  re-declare `key` — instead of the opaque id). When the field you add needs the
-  object's own data (owned by the integration layer), declare just those fields as
-  `@external` and name them in `@requires`; the integration layer resolves them inline
-  and the router hands them to your resolver, so you reference the data without owning
-  or re-declaring it. The data may be a nested value type (a price's `value`)…
-  ```graphql
-  type Money { centAmount: Int! @external }
-  type ProductPrice @key(fields: "id") {
-    id: ID!
-    value: Money! @external
-    discountedAmount(percentOff: Int!): Int! @requires(fields: "value { centAmount }")
-  }
-  ```
-  …or plain scalar fields on the object itself (an address's lines), which need no
-  extra type:
-  ```graphql
-  type Address @key(fields: "id") {
-    id: ID
-    streetName: String @external
-    city: String @external
-    country: String! @external
-    formatted: String! @requires(fields: "streetName city country")
-  }
-  ```
-  These nested objects are *additive-only* — they're not genuine global entities, so
-  (unlike the top-level entities) they're never a join target. Two caveats on
-  `Address`: it is **shared** (one type, reached from customer/BU/cart/order — your
-  field appears on every address), and its keys are declared **nullable** even though,
-  on a customer or business-unit, the `id` is **mandatory** (assigned on add, so
-  id-keying always resolves there). The nullable declaration is forced by the shared
-  type also covering a cart/order inline address, which may have no `id` (it can carry
-  only a `key`, or neither) — an address lacking the key you chose can't be reached by
-  it, so the field null-propagates there. Key by `key` if you target inline addresses.
-- **a field backed by an external service** — same `@interfaceObject` shape, but the
-  resolver calls out over the network (`examples/algolia-recommendations`:
-  `Product.recommendations` from Algolia) using the **official `algoliasearch` SDK**
-  over the global `fetch` — no special imports; outbound requests are limited to the
-  allowlist. The field is **nullable** so an upstream outage degrades to `null` rather
-  than failing the whole product. Its Algolia App ID/index/search-key are read from
-  `ctx.config` (the key a host-side `secret`) — keep the key search-only.
-- **overriding a field + making the integration layer a join target** — the same
-  `examples/algolia-recommendations` template also `@override`s the integration
-  layer's `Query.productSearch`, so Algolia powers search at the federation edge. Its
-  resolver returns only product **stubs** (`{ id }`, the Algolia `objectID` == the
-  product id); the router then re-enters the integration layer by that key (the
-  federation `_entities` query — the integration layer is a **join target** for
-  `Product`) to fill in every other product field, so the result has the **exact same
-  rich `Product` shape** the integration layer's own search returns.
-  `@override(from: "integration-layer")` transfers the field's ownership. To
-  `@override` the field you must also re-declare its argument/result types (federation
-  has no cross-subgraph type import), taking **exclusive** ownership via field-level
-  `@override(from: "integration-layer")` on every `ProductSearchResult`/facet field —
-  so the extension is the sole resolver of the search result in the federated graph.
-  (The integration layer still serves `productSearch` directly; `@override` only
-  governs the routed supergraph.) Algolia drives `items`/`total`/`facets`;
-  `facetDefinitions` (display labels derived from product types) stays empty.
-  `integration-layer` is the federated subgraph name `@override(from: …)` references.
-
-In all cases, do **not** redeclare/resolve fields the integration layer owns as your
-own — a field you co-own needs `@shareable`, and composition rejects an unshared
-duplicate. (`@external` is the opposite: it says "the integration layer owns this, I'm
-only referencing it for `@key`/`@requires`" — that's why the `value`/`Money.centAmount`
-above compose.)
-
-`pnpm validate` enforces that whichever you do composes — against the live
-integration-layer subgraph — before you push.
+1. You write `extension.ts`, exporting `typeDefs` and `resolvers`. esbuild bundles
+   it into one CommonJS module (`graphql` stays external; the host supplies it).
+2. `pnpm push` builds, validates locally and remotely, and only then PUTs the bundle
+   into the integration layer's store, authenticating with a `manage_project` token.
+   Anything broken or breaking fails before it gets there.
+3. The integration layer fetches the bundle, serves the subgraph, and publishes its
+   SDL to the schema registry. Edit, push, and the live extension changes, with no
+   redeploy.
 
 ## Flow: a storefront product search through the Algolia override
 
-When the `algolia-recommendations` extension is live, a storefront `productSearch` is
-powered by Algolia at the edge (the `@override`) but the rich product detail still
-comes from the integration layer (the federation join target). The router runs the
-whole plan; the storefront sends one query and gets back the same `ProductSearchResult`
-shape it always has.
+When the `algolia-recommendations` extension is live, a storefront `productSearch`
+is powered by your search engine at the edge (the `@override`), but the rich product
+detail still comes from the integration layer (the federation join target). The
+router runs the whole plan, so the storefront sends one query and gets back the same
+`ProductSearchResult` shape it always has.
 
 ```mermaid
 sequenceDiagram
@@ -428,27 +655,27 @@ sequenceDiagram
     participant T as Integration layer
     participant CT as commercetools
 
-    SF->>R: POST /{project}/graphql<br/>productSearch(input){ items{ id name variants } total facets } + session bearer
-    Note over R: Per-project planner. @override means productSearch<br/>is owned by the extensions subgraph.
+    SF->>R: productSearch query + session bearer
+    Note over R: Per-project planner. @override means<br/>productSearch is owned by the extension.
 
     R->>X: productSearch(input)  (subgraph fetch)
-    X->>AL: algoliasearch SDK → searchSingleIndex (over the global fetch)
-    AL-->>X: hits[{objectID}], nbHits, facets
-    X-->>R: ProductSearchResult{ items:[{id}], total, facets, facetDefinitions:[] }
+    X->>AL: algoliasearch SDK searchSingleIndex (over global fetch)
+    AL-->>X: hits with objectID, nbHits, facets
+    X-->>R: ProductSearchResult with item stubs
 
-    Note over R: items are bare Product stubs ({id}).<br/>Every other Product field is owned by the<br/>integration layer, so plan an _entities fetch.
+    Note over R: items are bare Product stubs.<br/>Other Product fields are owned by the<br/>integration layer, so plan an entities fetch.
 
-    R->>T: _entities(representations:[{__typename:Product, id}])<br/>{ ... on ConcreteType { name variants } } (session bearer)
-    Note over T: Resolves each id through a session/store/channel-scoped<br/>loader; picks the concrete per-product-type.
+    R->>T: _entities for the product ids + session bearer
+    Note over T: Resolves each id through a scoped loader<br/>and picks the concrete product type.
     T->>CT: product projections by id
     CT-->>T: product projections
-    T-->>R: [ ConcreteType{ name, variants } ] (positional, null for misses)
+    T-->>R: resolved Product fields, null for misses
 
-    Note over R: Merge Algolia's items/total/facets with<br/>the integration layer's resolved Product fields.
-    R-->>SF: ProductSearchResult (Algolia ranking + rich product detail)
+    Note over R: Merge Algolia ranking with the<br/>integration layer's resolved Product fields.
+    R-->>SF: ProductSearchResult (Algolia ranking + rich detail)
 ```
 
-The trust boundary stays in the integration layer: the `_entities` re-entry runs
+The trust boundary stays in the integration layer. The `_entities` re-entry runs
 through the same session-scoped loader as a direct `products(ids:)` read, and the
-integration layer re-validates the URL's project against the session bearer — the
+integration layer re-checks the URL's project against the session bearer. The
 router's routing is a hint, not the boundary.
