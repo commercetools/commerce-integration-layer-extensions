@@ -2,10 +2,14 @@
 // subgraph — the same two-subgraph composition the integration layer runs on publish.
 // `serve --compose` uses it to show the merged schema as you edit; `--gateway` reuses
 // the composed supergraph to plan queries across both. The integration layer's
-// subgraph SDL is read from its public `GET /api/<project>/subgraph` route.
+// subgraph SDL is read from its `GET /api/<project>/subgraph` route, which is guarded
+// by the commercetools `manage_project` trust boundary (it composes the project's
+// core subgraph, a credentialed CT round trip) — so we mint and send a manage_project
+// bearer, the same credential `push`/`validate` already use (see ctToken.ts).
 
 import { parse, printSchema, type GraphQLSchema } from "graphql";
 import { composeServices } from "@apollo/composition";
+import { mintManageProjectToken, required } from "./ctToken.js";
 
 /** The subgraph names the integration layer composes under — matched here so the
  *  local composition mirrors the deployed one. `integration-layer` is the name an
@@ -13,14 +17,25 @@ import { composeServices } from "@apollo/composition";
 export const INTEGRATION_LAYER_SERVICE = "integration-layer";
 export const EXTENSION_SERVICE = "extensions";
 
-/** Fetch the project's integration-layer subgraph SDL. */
+/**
+ * Fetch the project's integration-layer subgraph SDL. The route is guarded by the
+ * `manage_project` boundary, so we mint a token from the shared `.env` CTP_* creds
+ * (the same ones `push`/`validate` use) and send it as a bearer.
+ */
 export async function fetchIntegrationLayerSubgraphSdl(
   integrationLayerUrl: string,
   projectKey: string,
 ): Promise<string> {
+  const authUrl = required("CTP_AUTH_URL");
+  const clientId = required("CTP_CLIENT_ID");
+  const clientSecret = required("CTP_CLIENT_SECRET");
+  const token = await mintManageProjectToken(authUrl, clientId, clientSecret, projectKey);
+
   const base = integrationLayerUrl.replace(/\/+$/, "");
   const url = `${base}/api/${encodeURIComponent(projectKey)}/subgraph`;
-  const res = await fetch(url, { headers: { accept: "text/plain" } });
+  const res = await fetch(url, {
+    headers: { accept: "text/plain", Authorization: `Bearer ${token}` },
+  });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`could not fetch integration-layer subgraph SDL (${res.status}) from ${url}: ${text}`);
