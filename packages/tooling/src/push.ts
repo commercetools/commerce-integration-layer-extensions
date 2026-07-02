@@ -32,19 +32,27 @@ export async function pushCommand(): Promise<void> {
   // Bundle, then VALIDATE before we touch the store. Local check first — it always
   // hard-fails, regardless of --force.
   const { outfile, sourceFiles } = await buildBundle();
-  const { typeDefs, resolverTypes } = await validateBundle(outfile, sourceFiles);
-  process.stdout.write(`✓ validated bundle (resolver roots: ${resolverTypes.join(', ') || 'none'})\n`);
+  const { typeDefs, resolverTypes, apiExtensionKeys } = await validateBundle(outfile, sourceFiles);
+  process.stdout.write(
+    `✓ validated bundle (resolver roots: ${resolverTypes.join(', ') || 'none'}; ` +
+      `API extensions: ${apiExtensionKeys.join(', ') || 'none'})\n`,
+  );
 
-  // Remote check: composes WITH the integration layer + no breaking changes vs the
-  // published schema. A failure aborts unless forced.
-  const remote = await remoteValidate(typeDefs);
-  printValidationResult(remote);
-  if (!remote.valid) {
-    if (!forceRequested()) {
-      process.stderr.write('Aborting push. Re-run with EE_FORCE=1 (or --force) to override.\n');
-      process.exit(1);
+  // Remote check composes the GraphQL subgraph WITH the integration layer + checks
+  // for breaking changes. Only applies when the bundle has a subgraph — an
+  // API-extensions-only bundle has no SDL, so skip straight to the upload (the
+  // connector reports its declared API extensions to the integration layer on load,
+  // which registers them with commercetools).
+  if (typeDefs !== null) {
+    const remote = await remoteValidate(typeDefs);
+    printValidationResult(remote);
+    if (!remote.valid) {
+      if (!forceRequested()) {
+        process.stderr.write('Aborting push. Re-run with EE_FORCE=1 (or --force) to override.\n');
+        process.exit(1);
+      }
+      process.stderr.write('⚠ forcing push despite failing validation (EE_FORCE/--force).\n');
     }
-    process.stderr.write('⚠ forcing push despite failing validation (EE_FORCE/--force).\n');
   }
 
   const bundle = await readFile(outfile, 'utf8');

@@ -8,6 +8,7 @@ import { buildCommand } from "./build.js";
 import { validateCommand } from "./validate.js";
 import { pushCommand } from "./push.js";
 import { serveCommand } from "./serve.js";
+import { invokeCommand } from "./invoke.js";
 
 const command = process.argv[2];
 
@@ -27,9 +28,14 @@ async function main(): Promise<void> {
     case "serve":
       await serveCommand();
       break;
+    case "invoke":
+      // Local API-Extension harness: fire a sample commercetools callback at the
+      // bundle's handlers and print the result. No credentials needed.
+      await invokeCommand();
+      break;
     default:
       process.stderr.write(
-        `ee-ext: unknown command '${command ?? ""}'. Use: build | validate | push | serve\n`,
+        `ee-ext: unknown command '${command ?? ""}'. Use: build | validate | push | serve | invoke\n`,
       );
       process.exit(1);
   }

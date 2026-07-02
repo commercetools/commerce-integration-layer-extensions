@@ -18,6 +18,7 @@ which serves it as a federated subgraph.
 - [How it fits together](#how-it-fits-together)
 - [Quickstart](#quickstart)
 - [Example templates](#example-templates)
+- [API Extensions](#api-extensions)
 - [Schema mechanics](#schema-mechanics)
 - [Resolver mechanics](#resolver-mechanics)
 - [Configuring your extension securely](#configuring-your-extension-securely)
@@ -86,21 +87,93 @@ That scope is what authorizes a push, and only `validate` and `push` use it.
 
 ## Example templates
 
-Five standalone templates, each showing one way a subgraph can contribute to the
-graph. Pick the closest one and edit its `src/extension.ts`. The
-`build → validate → push` flow is identical from any of their directories.
+Standalone templates, each showing one way a bundle can contribute. Pick the
+closest one and edit its `src/extension.ts`. The `build → validate → push` flow is
+identical from any of their directories.
 
-| Template | Pattern | Start here when you want to |
-| --- | --- | --- |
-| **server-time** | New type + root field (`Query.serverTime`) | add a brand-new query or type that shares nothing with the integration layer |
-| **loyalty-points** | Field on an entity from an *argument* (`Product.loyaltyPoints`) | add a field to every product, computed without reading any product data |
-| **price-discount** | Field from the object's own data via `@requires` (`ProductPrice.discountedAmount`) | compute from a field the integration layer owns (a nested value) |
-| **address-format** | `@requires` over scalar fields (`Address.formatted`) | compute from plain scalar fields the integration layer owns |
-| **algolia-recommendations** | External service + field `@override` (`Product.recommendations`, `Query.productSearch`) | call out to a vendor API, and/or take over an existing field |
+There are **two kinds** of extension, and a bundle may export either or both:
+
+- **GraphQL schema extensions** (`typeDefs` + `resolvers`) — ADD FIELDS to the
+  graph. The five below.
+- **commercetools API Extensions** (`apiExtensions`) — a synchronous callback that
+  VALIDATES or MODIFIES a cart/order/… write *before commercetools saves it* (it
+  can even block it). See **cart-sku-blocker** and [API Extensions](#api-extensions)
+  below. These change API *behaviour*, not the schema.
+
+| Template | Kind | Pattern | Start here when you want to |
+| --- | --- | --- | --- |
+| **server-time** | schema | New type + root field (`Query.serverTime`) | add a brand-new query or type that shares nothing with the integration layer |
+| **loyalty-points** | schema | Field on an entity from an *argument* (`Product.loyaltyPoints`) | add a field to every product, computed without reading any product data |
+| **price-discount** | schema | Field from the object's own data via `@requires` (`ProductPrice.discountedAmount`) | compute from a field the integration layer owns (a nested value) |
+| **address-format** | schema | `@requires` over scalar fields (`Address.formatted`) | compute from plain scalar fields the integration layer owns |
+| **algolia-recommendations** | schema | External service + field `@override` (`Product.recommendations`, `Query.productSearch`) | call out to a vendor API, and/or take over an existing field |
+| **cart-sku-blocker** | API Extension + GraphQL | Block SKUs from carts (`cart` Create/Update) *and* expose a `blockedSkus` query, from one shared config | validate or modify a cart/order/… write before it is saved — and see one bundle do both |
 
 > Each project holds one bundle, so a second push replaces the first. The templates
 > are not meant to run side by side, so push one per project. To ship several
-> patterns at once, combine their `typeDefs` and `resolvers` in a single file.
+> patterns at once, combine their `typeDefs` / `resolvers` / `apiExtensions` in a
+> single file.
+
+## API Extensions
+
+A [commercetools API Extension](https://docs.commercetools.com/api/projects/api-extensions)
+is a synchronous HTTP callback commercetools makes *before it persists* a
+cart/order/customer/… create or update. The callback can **approve** the write,
+**modify** it (return update actions), or **block** it (return a validation error).
+Unlike a schema extension, it doesn't add fields — it intercepts writes.
+
+Export an `apiExtensions` array of handlers. Use `defineApiExtension` for typing and
+the `approve` / `block` / `update` helpers to return intent:
+
+```ts
+import { approve, block, defineApiExtension, type CartLike } from '@example-extensions/tooling/api-extension';
+
+export const apiExtensions = [
+  defineApiExtension<CartLike>({
+    key: 'cart-sku-blocker',            // → commercetools extension key octolog-il-cart-sku-blocker
+    resourceTypeId: 'cart',             // cart | order | customer | payment | quote | business-unit | shopping-list | …
+    actions: ['Create', 'Update'],
+    handler: (input, ctx) => {
+      const blockedSku = ctx.config.BLOCKED_SKU || 'BLOCKED-SKU';
+      const lineItems = input.resource.obj?.lineItems ?? [];
+      return lineItems.some((li) => li.variant?.sku === blockedSku)
+        ? block('InvalidInput', `SKU "${blockedSku}" cannot be added to the cart.`)
+        : approve();
+    },
+  }),
+];
+```
+
+- **Registration is automatic.** When the bundle is deployed, the integration layer
+  reads the declared `apiExtensions` and registers them with commercetools (pointing
+  the destination at the extensions sandbox, with an authenticated callback). You
+  don't call the commercetools Extensions API yourself.
+- **Config** is read from `ctx.config` (set per project in the Merchant Center app /
+  the extension config API), exactly like a resolver. Secrets are decrypted host-side.
+- **Handlers run in the same sandbox** as resolvers (no ambient authority; the
+  allowlist-gated global `fetch` is available for outbound calls), with a timeout kept
+  under commercetools' extension budget. A handler that throws does not block the
+  write; only a failed callback auth does.
+
+The **cart-sku-blocker** example goes further: the same bundle ALSO exports a
+`Query.blockedSkus` GraphQL field that returns the very SKUs it blocks, both reading
+one shared `ctx.config.BLOCKED_SKU` list — so one bundle contributes both an
+API-Extension callback and a GraphQL field from a single config.
+
+### Try it locally
+
+`ee-ext invoke` fires a sample commercetools cart callback at your handlers and
+prints the result — no deploy, no credentials:
+
+```bash
+cd examples/cart-sku-blocker
+pnpm dev                       # → ee-ext invoke — sends the default (blocked) SKU
+pnpm exec ee-ext invoke --sku ALLOWED           # a SKU that passes
+pnpm exec ee-ext invoke --action Update --config BLOCKED_SKU=NO-SELL
+```
+
+Then `pnpm validate` / `pnpm push` as usual (an API-extensions-only bundle skips the
+GraphQL composition check — there's no schema to compose).
 
 ## Schema mechanics
 

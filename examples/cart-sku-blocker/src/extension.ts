@@ -1,0 +1,73 @@
+/**
+ * Example extension — ONE bundle doing TWO things at once, from the SAME config.
+ *
+ * It exports BOTH surfaces a bundle can contribute:
+ *  - an **API Extension** (`apiExtensions`): a synchronous callback commercetools
+ *    makes before it saves a cart write — this one BLOCKS the configured SKUs from
+ *    being added to any cart (a cart Create/Update trigger). It changes API
+ *    BEHAVIOUR, it does not add fields to the graph.
+ *  - a **GraphQL schema extension** (`typeDefs` + `resolvers`): a new root field
+ *    `Query.blockedSkus` that RETURNS the configured SKUs — an additive field on the
+ *    graph, exactly like `examples/server-time`.
+ *
+ * Both read the SAME per-project config (`ctx.config.BLOCKED_SKU`) through the shared
+ * `blockedSkus()` helper, so the API Extension that blocks a SKU and the query that
+ * lists the blocked SKUs can never drift apart. `BLOCKED_SKU` is a comma-separated
+ * list (set per project via the Merchant Center app / the extension config API);
+ * when unset it falls back to the constant below.
+ *
+ * Try it locally without deploying:  `pnpm dev`  (→ `ee-ext invoke`) fires a sample
+ * cart at the handler. `pnpm dev --sku OTHER` sends a different SKU to see it pass.
+ * Then `pnpm validate` / `pnpm push` against the project in the shared `.env`.
+ */
+
+import { approve, block, defineApiExtension, type CartLike } from '@example-extensions/tooling/api-extension';
+
+// Used when the project sets no BLOCKED_SKU config entry.
+const DEFAULT_BLOCKED_SKU = 'BLOCKED-SKU';
+
+/**
+ * The blocked SKUs for a project, read from the SAME config both surfaces see:
+ * a comma-separated `BLOCKED_SKU` list (trimmed, empties dropped), falling back to
+ * the default when unset/empty.
+ */
+function blockedSkus(config: Record<string, string>): string[] {
+  const skus = (config.BLOCKED_SKU ?? '')
+    .split(',')
+    .map((sku) => sku.trim())
+    .filter((sku) => sku.length > 0);
+  return skus.length > 0 ? skus : [DEFAULT_BLOCKED_SKU];
+}
+
+export const apiExtensions = [
+  defineApiExtension<CartLike>({
+    key: 'cart-sku-blocker',
+    resourceTypeId: 'cart',
+    actions: ['Create', 'Update'],
+    handler: (input, ctx) => {
+      const blocked = blockedSkus(ctx.config);
+      const lineItems = input.resource.obj?.lineItems ?? [];
+      const offending = lineItems.find((item) => item.variant?.sku && blocked.includes(item.variant.sku));
+      return offending
+        ? block('InvalidInput', `SKU "${offending.variant?.sku}" cannot be added to the cart.`)
+        : approve();
+    },
+  }),
+];
+
+export const typeDefs = `
+  extend schema @link(url: "https://specs.apollo.dev/federation/v2.3")
+
+  type Query {
+    "The SKUs the cart-sku-blocker API Extension refuses to add to a cart, for this project."
+    blockedSkus: [String!]!
+  }
+`;
+
+export const resolvers = {
+  Query: {
+    // Reads the SAME config the API Extension handler above blocks against.
+    blockedSkus: (_parent: unknown, _args: unknown, ctx: { now(): number; config: Record<string, string> }) =>
+      blockedSkus(ctx.config),
+  },
+};

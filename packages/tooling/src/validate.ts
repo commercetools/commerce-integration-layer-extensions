@@ -12,12 +12,18 @@ import { remoteValidate, printValidationResult } from "./remoteValidate.js";
 /** Build + locally validate + remotely validate the current example. Exits 1 on failure. */
 export async function validateCommand(): Promise<void> {
   const { outfile, sourceFiles } = await buildBundle();
-  const { typeDefs, resolverTypes } = await validateBundle(outfile, sourceFiles);
+  const { typeDefs, resolverTypes, apiExtensionKeys } = await validateBundle(outfile, sourceFiles);
   process.stdout.write(
-    `✓ bundle is a valid, composable extension subgraph (resolver roots: ${
-      resolverTypes.join(", ") || "none"
-    })\n`,
+    `✓ bundle is valid (resolver roots: ${resolverTypes.join(", ") || "none"}; ` +
+      `API extensions: ${apiExtensionKeys.join(", ") || "none"})\n`,
   );
+
+  // Remote composition applies only to the GraphQL subgraph. An API-extensions-only
+  // bundle has no SDL to compose, so there's nothing remote to validate.
+  if (typeDefs === null) {
+    process.stdout.write("(no GraphQL subgraph — skipping remote composition check)\n");
+    return;
+  }
 
   const result = await remoteValidate(typeDefs);
   printValidationResult(result);

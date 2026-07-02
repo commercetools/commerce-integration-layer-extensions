@@ -160,6 +160,70 @@ describe("the address-format example (a field on a shared nested Address via @re
   });
 });
 
+describe("the cart-sku-blocker example (one bundle: an API Extension AND a GraphQL field, sharing config)", () => {
+  type Ctx = { now(): number; config: Record<string, string> };
+  type ApiExtension = {
+    key: string;
+    resourceTypeId: string;
+    actions: string[];
+    handler: (
+      input: { action: string; resource: { typeId: string; id: string; obj?: unknown } },
+      ctx: Ctx,
+    ) => { errors?: { code: string; message: string }[]; actions?: unknown[] } | void;
+  };
+  type Bundle = {
+    apiExtensions: ApiExtension[];
+    resolvers: { Query: { blockedSkus: (p: unknown, a: unknown, ctx: Ctx) => string[] } };
+  };
+
+  const cart = (sku: string) => ({
+    action: "Create",
+    resource: { typeId: "cart", id: "c1", obj: { lineItems: [{ variant: { sku } }] } },
+  });
+
+  it("builds and validates: a GraphQL Query field AND an API Extension", async () => {
+    const { outfile, sourceFiles } = await buildExample("cart-sku-blocker");
+    const result = await validateBundle(outfile, sourceFiles);
+    expect(result.typeDefs).not.toBeNull();
+    expect(result.typeDefs).toContain("blockedSkus");
+    expect(result.resolverTypes).toEqual(["Query"]);
+    expect(result.apiExtensionKeys).toEqual(["cart-sku-blocker"]);
+  });
+
+  it("loads and runs: the handler blocks a configured SKU, approves others, and honours the comma list", async () => {
+    const { outfile } = await buildExample("cart-sku-blocker");
+    const mod = loadBundleSource(await readFile(outfile, "utf8")) as Bundle;
+    const handler = mod.apiExtensions[0];
+    expect(handler.resourceTypeId).toBe("cart");
+    expect(handler.actions).toEqual(["Create", "Update"]);
+
+    const ctx: Ctx = { now: () => 0, config: { BLOCKED_SKU: "NO-SELL-123" } };
+    const blocked = handler.handler(cart("NO-SELL-123"), ctx);
+    expect(blocked).toEqual({
+      errors: [{ code: "InvalidInput", message: 'SKU "NO-SELL-123" cannot be added to the cart.' }],
+    });
+    // A different SKU is approved (empty result).
+    expect(handler.handler(cart("FINE"), ctx)).toEqual({});
+
+    // A comma-separated list blocks any SKU in it.
+    const listCtx: Ctx = { now: () => 0, config: { BLOCKED_SKU: "A, B" } };
+    expect(handler.handler(cart("B"), listCtx)).toEqual({
+      errors: [{ code: "InvalidInput", message: 'SKU "B" cannot be added to the cart.' }],
+    });
+    expect(handler.handler(cart("C"), listCtx)).toEqual({});
+  });
+
+  it("loads and runs: Query.blockedSkus returns the same parsed config the handler blocks against", async () => {
+    const { outfile } = await buildExample("cart-sku-blocker");
+    const mod = loadBundleSource(await readFile(outfile, "utf8")) as Bundle;
+    const blockedSkus = mod.resolvers.Query.blockedSkus;
+    // The comma-separated list is parsed (trimmed, empties dropped).
+    expect(blockedSkus(undefined, undefined, { now: () => 0, config: { BLOCKED_SKU: "A, B" } })).toEqual(["A", "B"]);
+    // No config → the default.
+    expect(blockedSkus(undefined, undefined, { now: () => 0, config: {} })).toEqual(["BLOCKED-SKU"]);
+  });
+});
+
 describe("the algolia-recommendations example (uses the official SDK over the global fetch)", () => {
   type Recommendation = { product: { id: string }; reason: string };
   // The resolver uses the official `algoliasearch` SDK, whose fetch transport calls

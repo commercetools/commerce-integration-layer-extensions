@@ -28,13 +28,62 @@ export class BundleValidationError extends Error {
 }
 
 export type ValidationResult = {
-  /** The bundle's exported SDL. */
-  typeDefs: string;
+  /** The bundle's exported SDL, or null for an API-extensions-only bundle. */
+  typeDefs: string | null;
   /** The resolver root keys that matched a type in the schema (e.g. `Query`). */
   resolverTypes: string[];
+  /** The keys of the bundle's commercetools API Extensions (empty if none). */
+  apiExtensionKeys: string[];
 };
 
-type ExtensionModule = { typeDefs?: unknown; resolvers?: unknown };
+type ExtensionModule = { typeDefs?: unknown; resolvers?: unknown; apiExtensions?: unknown };
+
+const API_EXTENSION_ACTIONS = new Set(['Create', 'Update']);
+
+/**
+ * Validate the bundle's optional `apiExtensions` export (shape only — a handler's
+ * behaviour is the author's to test). Returns the declared keys.
+ */
+function validateApiExtensions(raw: unknown): string[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    throw new BundleValidationError('`apiExtensions` must be an array');
+  }
+  const keys = new Set<string>();
+  raw.forEach((entry, i) => {
+    if (entry === null || typeof entry !== 'object') {
+      throw new BundleValidationError(`apiExtensions[${i}] must be an object`);
+    }
+    const e = entry as Record<string, unknown>;
+    const key = typeof e.key === 'string' ? e.key.trim() : '';
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(key)) {
+      throw new BundleValidationError(
+        `apiExtensions[${i}].key must be kebab-case (got '${String(e.key)}')`,
+      );
+    }
+    if (keys.has(key)) throw new BundleValidationError(`apiExtensions has a duplicate key '${key}'`);
+    keys.add(key);
+    if (typeof e.resourceTypeId !== 'string' || e.resourceTypeId.trim() === '') {
+      throw new BundleValidationError(`apiExtensions['${key}'].resourceTypeId must be a non-empty string`);
+    }
+    const actions = Array.isArray(e.actions) ? e.actions : [];
+    if (
+      actions.length === 0 ||
+      !actions.every((a) => typeof a === 'string' && API_EXTENSION_ACTIONS.has(a))
+    ) {
+      throw new BundleValidationError(
+        `apiExtensions['${key}'].actions must be a non-empty subset of ["Create","Update"]`,
+      );
+    }
+    if (typeof e.handler !== 'function') {
+      throw new BundleValidationError(`apiExtensions['${key}'].handler must be a function`);
+    }
+    if (e.condition !== undefined && typeof e.condition !== 'string') {
+      throw new BundleValidationError(`apiExtensions['${key}'].condition must be a string`);
+    }
+  });
+  return [...keys];
+}
 
 /**
  * Validate the bundle at `bundlePath`, having analysed the author's `sourceFiles`
@@ -64,11 +113,21 @@ export async function validateBundle(
   }
 
   const { typeDefs, resolvers } = mod;
-  if (typeof typeDefs !== "string" || typeDefs.trim() === "") {
-    throw new BundleValidationError("bundle must export a non-empty `typeDefs` string");
+  const apiExtensionKeys = validateApiExtensions(mod.apiExtensions);
+
+  // A bundle must contribute at least one of a GraphQL subgraph or API Extensions.
+  const hasTypeDefs = typeof typeDefs === "string" && typeDefs.trim() !== "";
+  if (!hasTypeDefs) {
+    if (apiExtensionKeys.length === 0) {
+      throw new BundleValidationError(
+        "bundle must export a non-empty `typeDefs` string and/or an `apiExtensions` array",
+      );
+    }
+    // API-extensions-only bundle: no SDL to check, no remote composition.
+    return { typeDefs: null, resolverTypes: [], apiExtensionKeys };
   }
   if (resolvers === null || typeof resolvers !== "object") {
-    throw new BundleValidationError("bundle must export a `resolvers` object");
+    throw new BundleValidationError("bundle with `typeDefs` must also export a `resolvers` object");
   }
 
   let doc: DocumentNode;
@@ -124,5 +183,5 @@ export async function validateBundle(
     }
   }
 
-  return { typeDefs, resolverTypes };
+  return { typeDefs, resolverTypes, apiExtensionKeys };
 }

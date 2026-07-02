@@ -11,6 +11,9 @@ import { GraphQLError } from "graphql";
 export interface EvaluatedBundle {
   typeDefs?: unknown;
   resolvers?: unknown;
+  // commercetools API-Extension handlers (a bundle may export these instead of, or
+  // alongside, a GraphQL subgraph). See apiExtension.ts.
+  apiExtensions?: unknown;
 }
 
 /**

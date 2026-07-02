@@ -8,6 +8,7 @@
   },
   "exports": {
     ".": "./src/index.ts",
+    "./api-extension": "./src/apiExtension.ts",
     "./package.json": "./package.json"
   },
   "scripts": {

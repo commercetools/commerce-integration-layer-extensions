@@ -51,6 +51,19 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  examples/cart-sku-blocker:
+    dependencies:
+      '@example-extensions/tooling':
+        specifier: workspace:*
+        version: link:../../packages/tooling
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.21
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   examples/loyalty-points:
     dependencies:
       '@example-extensions/tooling':
