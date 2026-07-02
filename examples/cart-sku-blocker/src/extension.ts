@@ -21,7 +21,8 @@
  * Then `pnpm validate` / `pnpm push` against the project in the shared `.env`.
  */
 
-import { approve, block, defineApiExtension, type CartLike } from '@example-extensions/tooling/api-extension';
+import { approve, block, defineApiExtension } from '@example-extensions/tooling/api-extension';
+import type { Cart } from '@commercetools/platform-sdk';
 
 // Used when the project sets no BLOCKED_SKU config entry.
 const DEFAULT_BLOCKED_SKU = 'BLOCKED-SKU';
@@ -40,16 +41,20 @@ function blockedSkus(config: Record<string, string>): string[] {
 }
 
 export const apiExtensions = [
-  defineApiExtension<CartLike>({
+  defineApiExtension({
     key: 'cart-sku-blocker',
     resourceTypeId: 'cart',
     actions: ['Create', 'Update'],
     handler: (input, ctx) => {
       const blocked = blockedSkus(ctx.config);
-      const lineItems = input.resource.obj?.lineItems ?? [];
-      const offending = lineItems.find((item) => item.variant?.sku && blocked.includes(item.variant.sku));
+      // `input.resource` is the SDK's discriminated Reference union; narrowing on
+      // typeId gives `obj` typed as the real commercetools `Cart`.
+      const cart: Cart | undefined = input.resource.typeId === 'cart' ? input.resource.obj : undefined;
+      const offending = (cart?.lineItems ?? []).find(
+        (item) => item.variant.sku !== undefined && blocked.includes(item.variant.sku),
+      );
       return offending
-        ? block('InvalidInput', `SKU "${offending.variant?.sku}" cannot be added to the cart.`)
+        ? block('InvalidInput', `SKU "${offending.variant.sku}" cannot be added to the cart.`)
         : approve();
     },
   }),

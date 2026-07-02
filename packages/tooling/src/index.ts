@@ -19,6 +19,6 @@ export type {
   ApiExtensionError,
   ApiExtensionInput,
   ApiExtensionResult,
-  CartLike,
   ExtensionContext,
+  ExtensionInput,
 } from "./apiExtension.js";

@@ -122,21 +122,27 @@ cart/order/customer/… create or update. The callback can **approve** the write
 **modify** it (return update actions), or **block** it (return a validation error).
 Unlike a schema extension, it doesn't add fields — it intercepts writes.
 
-Export an `apiExtensions` array of handlers. Use `defineApiExtension` for typing and
-the `approve` / `block` / `update` helpers to return intent:
+Export an `apiExtensions` array of handlers. Use `defineApiExtension` for type
+checking and the `approve` / `block` / `update` helpers to return intent. The
+received payload is the **commercetools SDK's own `ExtensionInput`** — you don't
+define the resource types: narrow on `input.resource.typeId` and `resource.obj` is
+the real `Cart` / `Order` / … (these are type-only imports, erased from the bundle):
 
 ```ts
-import { approve, block, defineApiExtension, type CartLike } from '@example-extensions/tooling/api-extension';
+import { approve, block, defineApiExtension } from '@example-extensions/tooling/api-extension';
+import type { Cart } from '@commercetools/platform-sdk';
 
 export const apiExtensions = [
-  defineApiExtension<CartLike>({
+  defineApiExtension({
     key: 'cart-sku-blocker',            // → commercetools extension key octolog-il-cart-sku-blocker
     resourceTypeId: 'cart',             // cart | order | customer | payment | quote | business-unit | shopping-list | …
     actions: ['Create', 'Update'],
     handler: (input, ctx) => {
       const blockedSku = ctx.config.BLOCKED_SKU || 'BLOCKED-SKU';
-      const lineItems = input.resource.obj?.lineItems ?? [];
-      return lineItems.some((li) => li.variant?.sku === blockedSku)
+      // input.resource is the SDK's discriminated Reference union — narrow to
+      // get a fully-typed Cart.
+      const cart: Cart | undefined = input.resource.typeId === 'cart' ? input.resource.obj : undefined;
+      return (cart?.lineItems ?? []).some((li) => li.variant.sku === blockedSku)
         ? block('InvalidInput', `SKU "${blockedSku}" cannot be added to the cart.`)
         : approve();
     },
@@ -151,9 +157,12 @@ export const apiExtensions = [
 - **Config** is read from `ctx.config` (set per project in the Merchant Center app /
   the extension config API), exactly like a resolver. Secrets are decrypted host-side.
 - **Handlers run in the same sandbox** as resolvers (no ambient authority; the
-  allowlist-gated global `fetch` is available for outbound calls), with a timeout kept
-  under commercetools' extension budget. A handler that throws does not block the
-  write; only a failed callback auth does.
+  allowlist-gated global `fetch` is available for outbound calls). A handler that
+  throws **fails hard**: the callback returns an error and commercetools fails the
+  write — never a silent approve. The **deadline is commercetools'** (the extension's
+  `timeoutInMs`, or its ~2s default); if a handler runs past it, commercetools fails
+  the write itself — the sandbox imposes no second timeout. To *allow* a write,
+  `approve()`; to *reject* it, `block(...)`.
 
 The **cart-sku-blocker** example goes further: the same bundle ALSO exports a
 `Query.blockedSkus` GraphQL field that returns the very SKUs it blocks, both reading

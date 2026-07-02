@@ -59,6 +59,9 @@ function configFromEnv(): Record<string, string> {
 
 /** A sample commercetools cart callback payload. */
 function sampleCartInput(action: ApiExtensionAction, sku: string): ApiExtensionInput {
+  // A minimal sample callback for local testing. The real payload is the SDK's
+  // ExtensionInput (resource: a full Cart Reference); we send just the fields a
+  // cart handler reads, cast to the SDK type.
   return {
     action,
     resource: {
@@ -69,7 +72,7 @@ function sampleCartInput(action: ApiExtensionAction, sku: string): ApiExtensionI
         lineItems: [{ id: 'sample-line-item', quantity: 1, variant: { sku } }],
       },
     },
-  };
+  } as unknown as ApiExtensionInput;
 }
 
 function describeResult(result: ApiExtensionResult): string {
