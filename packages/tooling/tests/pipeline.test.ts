@@ -3,13 +3,14 @@
 // good bundles pass (and `graphql` stays external) and every class of broken bundle is
 // rejected. The shipped templates are exercised separately in examples.test.ts.
 
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GraphQLError } from "graphql";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildBundle, type BuildResult } from "../src/build.js";
 import { loadBundleSource } from "../src/loadBundle.js";
+import { analyzeSources } from "../src/staticAnalysis.js";
 import { BundleValidationError, validateBundle } from "../src/validateBundle.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -123,5 +124,35 @@ describe("validation rejects broken bundles", () => {
     const { outfile, sourceFiles } = await buildFixture("ambient-authority");
     await expect(validateBundle(outfile, sourceFiles)).rejects.toThrow(BundleValidationError);
     await expect(validateBundle(outfile, sourceFiles)).rejects.toThrow(/process/);
+  });
+});
+
+describe("static analysis of non-endowed globals", () => {
+  // analyzeSources reads files, so write throwaway sources to the temp dir.
+  const write = async (name: string, src: string): Promise<string> => {
+    const p = join(tmpDir, name);
+    await writeFile(p, src, "utf8");
+    return p;
+  };
+
+  it("flags a global the sandbox deliberately withholds", async () => {
+    const p = await write("withheld.ts", `export const x = new SharedArrayBuffer(8);\n`);
+    const issues = await analyzeSources([p]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toMatch(/SharedArrayBuffer/);
+    expect(issues[0].message).toMatch(/does not provide/);
+  });
+
+  it("does NOT flag an endowed global", async () => {
+    const p = await write("endowed.ts", `export const q = new URLSearchParams("a=1").toString();\n`);
+    expect(await analyzeSources([p])).toEqual([]);
+  });
+
+  it("does NOT flag a withheld name at its declaration site (only free reads are a lint)", async () => {
+    // A syntactic lint has no scope resolution — a *use* of a local shadowing a
+    // withheld name would still be flagged (accepted, like the `process` check) —
+    // but the declaration name itself is not the ambient global, so it isn't.
+    const p = await write("decl.ts", `export const performance = 1;\n`);
+    expect(await analyzeSources([p])).toEqual([]);
   });
 });

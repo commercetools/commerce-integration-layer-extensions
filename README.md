@@ -454,12 +454,19 @@ The Algolia template degrades both `recommendations` and the search result this 
 Resolvers run in a sandbox, not a full Node process. esbuild bundles `extension.ts`
 and everything it imports into one self-contained CommonJS module.
 
-- **Available:** the usual web-platform globals (`fetch`, allowlisted;
-  `AbortController`; `setTimeout`/`clearTimeout`; `Date`; `Math`;
-  `TextEncoder`/`TextDecoder`; `URL`). Most SDKs work unmodified.
-- **Off limits:** `process`/`process.env`, `fs`, `child_process`, raw sockets, Node
-  built-ins (`node:*`), `eval`, `new Function`. Config comes from `ctx.config`, not
-  the environment.
+- **Available:** the standard web-platform data globals — `fetch` (allowlisted);
+  `setTimeout`/`clearTimeout`; `Date`; `Math`; `URL`/`URLSearchParams`;
+  `TextEncoder`/`TextDecoder`; `btoa`/`atob`; the fetch types `Headers`/`Request`/
+  `Response`/`FormData`; `structuredClone`; `Intl`; `AbortController`/`AbortSignal`
+  — plus the ECMAScript intrinsics (`JSON`, `Map`, typed arrays, …). Most fetch-based
+  SDKs work unmodified.
+- **Off limits:** `process`/`process.env`, `Buffer`, `fs`, `child_process`, raw
+  sockets, Node built-ins (`node:*`), `eval`, `new Function`, `setInterval`, and the
+  deliberately-withheld web globals `SharedArrayBuffer`/`Atomics`, `WebAssembly`,
+  `MessageChannel`/`BroadcastChannel`, `WeakRef`/`FinalizationRegistry`,
+  `performance`, and `CompressionStream`/`DecompressionStream` (channels, DoS
+  amplifiers, or side channels). Config comes from `ctx.config`, not the environment.
+  `validate`/`push` flag a reach for a non-endowed global before you deploy.
 - **Imports:** local modules and npm SDKs get inlined; `graphql` stays external
   (the host provides it, and a second copy would break its `instanceof` checks).
 - **Network:** only through `fetch`, only to allowlisted hosts, and anything else is

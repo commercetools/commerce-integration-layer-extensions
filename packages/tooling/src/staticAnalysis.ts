@@ -4,7 +4,9 @@
 // It parses the author's own source files to a TypeScript AST (so a mention in a
 // comment or string is never a false positive) and is a lint, not an enforcement
 // boundary — it catches honest mistakes, not deliberate obfuscation. It rejects:
-//   - the ambient global `process` (configuration comes through `ctx.config`);
+//   - a well-known global the sandbox does NOT endow (`process`, `Buffer`,
+//     `setInterval`, `SharedArrayBuffer`, `WebAssembly`, DOM globals, …) — so an
+//     author who reaches for one is warned here instead of crashing at runtime;
 //   - importing a Node built-in (`fs`, `crypto`, `node:*`, …) — use `fetch` or an npm package;
 //   - `eval` / `new Function`.
 
@@ -21,8 +23,58 @@ const NODE_BUILTINS = new Set([
   "util", "v8", "vm", "worker_threads", "zlib",
 ]);
 
-/** Ambient globals the runtime does not provide (using them throws at runtime). */
-const DENIED_GLOBALS = new Set(["process"]);
+// The web-platform globals the sandbox endows (its "Tier-1 data surface"), on top
+// of the ECMAScript intrinsics SES lockdown leaves in place (JSON, Object, Array,
+// Map, Set, Promise, RegExp, typed arrays, …, always available). This mirrors the
+// connector's `webPlatformEndowments` (bundle/sandbox/compartment.ts) and is the
+// SOURCE OF TRUTH `UNAVAILABLE_GLOBALS` is the curated complement of — keep the two
+// in sync when the connector's endowment list changes. Referenced by the check so
+// a global that is BOTH endowed and (mistakenly) listed as unavailable never fires.
+const ENDOWED_GLOBALS = new Set([
+  "fetch",
+  "setTimeout", "clearTimeout",
+  "Date", "Math",
+  "URL", "URLSearchParams",
+  "TextEncoder", "TextDecoder", "btoa", "atob",
+  "Headers", "Request", "Response", "FormData",
+  "structuredClone", "Intl",
+  "AbortController", "AbortSignal",
+  "console", // tamed, forwarded to the host logger
+]);
+
+// Well-known globals the sandbox deliberately does NOT provide, each with a hint at
+// the endowed alternative. Using one throws at runtime, so flag it at validate time.
+// NOT exhaustive (it can't enumerate every absent name) and NOT a security boundary
+// — a curated, high-signal set: Node-only globals, and the capability / DoS /
+// side-channel globals the compartment withholds on purpose (see compartment.ts).
+const UNAVAILABLE_GLOBALS = new Map<string, string>([
+  // Node-only — read config from `ctx.config`, or use the web-standard equivalent.
+  ["process", "read configuration from `ctx.config` instead"],
+  ["Buffer", "use `TextEncoder`/`Uint8Array`, or `btoa`/`atob` for base64"],
+  ["global", "use `globalThis`"],
+  ["setInterval", "the sandbox endows `setTimeout`/`clearTimeout` only — loop with `setTimeout`"],
+  ["clearInterval", "the sandbox endows `setTimeout`/`clearTimeout` only"],
+  ["setImmediate", "use `setTimeout(fn, 0)`"],
+  // Deliberately withheld (capability / DoS / side-channel) — see compartment.ts.
+  ["SharedArrayBuffer", "withheld — shared memory is a cross-sandbox channel"],
+  ["Atomics", "withheld — pairs with SharedArrayBuffer (channel + synchronous blocking)"],
+  ["WebAssembly", "withheld — a second execution engine is not exposed to extensions"],
+  ["MessageChannel", "withheld — communication primitive"],
+  ["MessagePort", "withheld — communication primitive"],
+  ["BroadcastChannel", "withheld — communication primitive"],
+  ["WeakRef", "withheld — GC observability is a side channel"],
+  ["FinalizationRegistry", "withheld — GC observability is a side channel"],
+  ["performance", "withheld — high-resolution timing is a side channel; use `Date.now()`"],
+  ["CompressionStream", "withheld — decompression is an unbounded DoS vector"],
+  ["DecompressionStream", "withheld — decompression is an unbounded DoS vector"],
+  // Browser/DOM globals that simply do not exist server-side.
+  ["window", "not available (no DOM); use `globalThis`"],
+  ["document", "not available (no DOM)"],
+  ["localStorage", "not available; use `ctx.config` for configuration"],
+  ["sessionStorage", "not available; use `ctx.config` for configuration"],
+  ["XMLHttpRequest", "not available; use the global `fetch`"],
+  ["WebSocket", "not available; only outbound `fetch` egress is provided"],
+]);
 
 export interface AnalysisIssue {
   file: string;
@@ -86,18 +138,32 @@ function analyzeSourceFile(sf: ts.SourceFile, issues: AnalysisIssue[]): void {
       report(node, "uses `new Function`, which the runtime does not allow");
     }
 
-    // Reference to a denied ambient global (e.g. `process.env`). Skip the case
-    // where the identifier is the property side of an access (`foo.process`).
-    if (ts.isIdentifier(node) && DENIED_GLOBALS.has(node.text)) {
+    // Reference to a global the sandbox does not endow (e.g. `process.env`,
+    // `new SharedArrayBuffer(…)`). Skip when the identifier is the property side of
+    // an access (`foo.process`), a declaration name, or otherwise not a value read —
+    // this is a syntactic lint, so keep it to high-signal free-identifier reads.
+    if (ts.isIdentifier(node) && UNAVAILABLE_GLOBALS.has(node.text) && !ENDOWED_GLOBALS.has(node.text)) {
       const parent = node.parent;
       const isPropertyName =
         (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
         (ts.isQualifiedName(parent) && parent.right === node);
-      if (!isPropertyName) {
+      // A local binding of the same name (import/param/var/function/property) is the
+      // author's own — not the ambient global — so don't flag it.
+      const isLocalBinding =
+        (ts.isParameter(parent) ||
+          ts.isVariableDeclaration(parent) ||
+          ts.isFunctionDeclaration(parent) ||
+          ts.isBindingElement(parent) ||
+          ts.isPropertyAssignment(parent) ||
+          ts.isImportSpecifier(parent) ||
+          ts.isImportClause(parent)) &&
+        (parent as { name?: ts.Node }).name === node;
+      if (!isPropertyName && !isLocalBinding) {
+        const hint = UNAVAILABLE_GLOBALS.get(node.text) ?? "";
         report(
           node,
-          `uses the ambient global \`${node.text}\`, which the runtime does not provide — ` +
-            "read configuration from `ctx.config` instead",
+          `uses the global \`${node.text}\`, which the sandbox does not provide` +
+            (hint ? ` — ${hint}` : ""),
         );
       }
     }
