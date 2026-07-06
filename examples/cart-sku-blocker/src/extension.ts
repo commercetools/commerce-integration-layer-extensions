@@ -16,13 +16,15 @@
  * list (set per project via the Merchant Center app / the extension config API);
  * when unset it falls back to the constant below.
  *
- * Try it locally without deploying:  `pnpm dev`  (→ `ee-ext invoke`) fires a sample
- * cart at the handler. `pnpm dev --sku OTHER` sends a different SKU to see it pass.
- * Then `pnpm validate` / `pnpm push` against the project in the shared `.env`.
+ * Try it locally without deploying:  `pnpm dev`  (→ `commercetools integration-layer
+ * extension invoke`) fires a sample cart at the handler. Add `--sku OTHER` to send a
+ * different SKU and watch it pass. Then `pnpm validate` / `pnpm push`.
+ *
+ * A handler returns the plain runtime contract: `{}` to approve, `{ errors: [...] }`
+ * to block, or `{ actions: [...] }` to modify — no imports from the CLI needed.
  */
 
-import { approve, block, defineApiExtension } from '@example-extensions/tooling/api-extension';
-import type { Cart } from '@commercetools/platform-sdk';
+import type { Cart, ExtensionInput } from '@commercetools/platform-sdk';
 
 // Used when the project sets no BLOCKED_SKU config entry.
 const DEFAULT_BLOCKED_SKU = 'BLOCKED-SKU';
@@ -41,11 +43,11 @@ function blockedSkus(config: Record<string, string>): string[] {
 }
 
 export const apiExtensions = [
-  defineApiExtension({
+  {
     key: 'cart-sku-blocker',
     resourceTypeId: 'cart',
     actions: ['Create', 'Update'],
-    handler: (input, ctx) => {
+    handler: (input: ExtensionInput, ctx: { now(): number; config: Record<string, string> }) => {
       const blocked = blockedSkus(ctx.config);
       // `input.resource` is the SDK's discriminated Reference union; narrowing on
       // typeId gives `obj` typed as the real commercetools `Cart`.
@@ -54,10 +56,10 @@ export const apiExtensions = [
         (item) => item.variant.sku !== undefined && blocked.includes(item.variant.sku),
       );
       return offending
-        ? block('InvalidInput', `SKU "${offending.variant.sku}" cannot be added to the cart.`)
-        : approve();
+        ? { errors: [{ code: 'InvalidInput', message: `SKU "${offending.variant.sku}" cannot be added to the cart.` }] }
+        : {};
     },
-  }),
+  },
 ];
 
 export const typeDefs = `

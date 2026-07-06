@@ -1,8 +1,18 @@
 version: 2.1
 
-# Runs the offline validation pipeline (build → typecheck → lint → test) for every
-# example and the shared tooling. The per-example `validate`/`push` commands are not
-# run here: they talk to a live integration layer and need credentials.
+# Runs the offline pipeline (build → typecheck → lint) for every example. The build →
+# validate → push flow is the `integration-layer` topic of the commercetools CLI,
+# added by the published `@commercetools-internal/cli-topic-integration-layer` plugin
+# (installed from the internal GCP Artifact Registry). CI authenticates to that
+# registry with a short-lived GCP token minted by the Serenity orb from this repo's
+# CircleCI OIDC identity, so it can install the plugin and run the per-example `build`
+# (esbuild bundling — local, no live integration layer needed). `validate`/`push` are
+# still not run here: they talk to a live integration layer and need a
+# `commercetools auth login`.
+# See https://sd.commercetools.com/getting-started/continuous-integration/working-with-artifacts/
+
+orbs:
+  serenity: commercetools/serenity@41
 
 jobs:
   validate:
@@ -11,6 +21,14 @@ jobs:
       - image: cimg/node:22.13
     steps:
       - checkout
+      - serenity/install
+      - run:
+          name: Authenticate to GCP (OIDC)
+          # Mint a short-lived GCP access token from the repo's OIDC identity and
+          # export it as CLOUDSDK_AUTH_ACCESS_TOKEN (consumed by the npm auth step
+          # below). Requires the repo's OIDC identity to be bound to GCP Workload
+          # Identity — the same setup Serenity provisions for the publish flow.
+          command: serenity auth gcp
       - run:
           name: Install pnpm
           # Install pnpm directly with npm rather than via Corepack: the Corepack
@@ -20,8 +38,27 @@ jobs:
           # Version matches the `packageManager` field in package.json.
           command: sudo npm install --global --force pnpm@11.8.0
       - run:
+          name: Authenticate npm to the internal Artifact Registry
+          # Append the OIDC-derived GCP token (CLOUDSDK_AUTH_ACCESS_TOKEN, from
+          # `serenity auth gcp`) as the registry _authToken. The scope→registry map in
+          # this repo's .npmrc is copied into ~/.npmrc so BOTH pnpm (project .npmrc)
+          # and `commercetools plugins install` (oclif reads the USER-level ~/.npmrc)
+          # resolve and authenticate to the @commercetools-internal registry.
+          # Invocation per the Serenity "Working with artifacts" docs.
+          command: |
+            cat .npmrc >> "$HOME/.npmrc"
+            npx -y google-artifactregistry-auth --repo-config="$HOME/.npmrc" --credential-config="$HOME/.npmrc" --token="${CLOUDSDK_AUTH_ACCESS_TOKEN}"
+      - run:
           name: Install dependencies
           command: pnpm install --frozen-lockfile
+      - run:
+          name: Install the commercetools CLI + integration-layer plugin
+          # INTERIM: install from `@dev`, not `@latest`. The `plugins` command
+          # (@oclif/plugin-plugins) that `pnpm setup:cli` needs is only in the CLI's
+          # dev prerelease so far; `@commercetools/cli@latest` (0.0.17) predates it and
+          # `plugins install` errors with "command plugins:install:... not found".
+          # Drop `@dev` once plugin-plugins ships to the latest release.
+          command: sudo npm install --global @commercetools/cli@dev && pnpm setup:cli
       - run:
           name: Build
           command: pnpm build
@@ -31,9 +68,6 @@ jobs:
       - run:
           name: Lint
           command: pnpm lint
-      - run:
-          name: Test
-          command: pnpm test
 
 workflows:
   # No branch filter: CircleCI runs this on every push, covering PR branches and main.

@@ -1,14 +1,11 @@
 # Dependencies
 node_modules/
 
-# esbuild bundle output (built by `pnpm build`, never committed)
+# esbuild bundle output (built by `commercetools integration-layer extension build`, never committed)
 dist/
 
 # Local environment / credentials
 .env
-
-# Build temp dirs created by the build + validate tests
-packages/tooling/.tmp-ee-test-*/
 
 # Local agent notes (not part of the published repo)
 .claude/

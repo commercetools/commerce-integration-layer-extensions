@@ -4,14 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "ee-ext build",
-    "dev": "ee-ext invoke",
-    "validate": "ee-ext validate",
-    "push": "ee-ext push",
+    "build": "commercetools integration-layer extension build",
+    "dev": "commercetools integration-layer extension invoke",
+    "validate": "commercetools integration-layer extension validate",
+    "push": "commercetools integration-layer extension push",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@example-extensions/tooling": "workspace:*"
   },
   "devDependencies": {
     "@commercetools/platform-sdk": "8.25.0",

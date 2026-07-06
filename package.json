@@ -7,6 +7,7 @@
     "node": ">=22.13"
   },
   "scripts": {
+    "setup:cli": "commercetools plugins install @commercetools-internal/cli-topic-integration-layer",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
@@ -31,8 +32,8 @@
     "push:cart-sku-blocker": "pnpm --filter @example-extensions/cart-sku-blocker push"
   },
   "devDependencies": {
-    "eslint": "^9.17.0",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.18.0"
+    "eslint": "^9.39.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.62.1"
   }
 }

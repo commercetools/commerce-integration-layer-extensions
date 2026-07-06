@@ -7,11 +7,14 @@ An extension is a small GraphQL subgraph you write. It adds fields and types to 
 API the integration layer already serves for your project: a new root query, an
 extra field on `Product`, a value derived from data the integration layer owns, or
 a field that calls an external service. You write the SDL and the resolvers, run
-`pnpm push`, and the merged schema goes live with no redeploy.
+`commercetools integration-layer extension push`, and the merged schema goes live
+with no redeploy.
 
-There is nothing to run here. You get five example extensions under `examples/*`
-and a CLI, `ee-ext`, that builds your bundle and hands it to the integration layer,
-which serves it as a federated subgraph.
+There is nothing to run here. You get a set of example extensions under `examples/*`,
+and the build → validate → push flow lives in the **commercetools CLI**: the
+`integration-layer` topic, added by the published
+`@commercetools-internal/cli-topic-integration-layer` plugin (see
+[Quickstart](#quickstart)).
 
 ## Contents
 
@@ -31,14 +34,15 @@ which serves it as a federated subgraph.
 
 ## How it fits together
 
-You write one file. `ee-ext` publishes it. The integration layer composes your
-subgraph with its own schema and serves the result as a single GraphQL API that
-storefronts, the Merchant Center, and your own apps all query.
+You write one file. The `commercetools integration-layer` CLI publishes it. The
+integration layer composes your subgraph with its own schema and serves the result
+as a single GraphQL API that storefronts, the Merchant Center, and your own apps all
+query.
 
 ```mermaid
 flowchart LR
     Author["Your extension<br/>extension.ts"]
-    Tool["ee-ext"]
+    Tool["commercetools CLI<br/>integration-layer topic"]
     IL["Integration layer<br/>(merged GraphQL API)"]
     Client["Storefronts & apps"]
 
@@ -48,8 +52,9 @@ flowchart LR
 ```
 
 - `extension.ts` is your subgraph: a `typeDefs` SDL string and a `resolvers` object.
-- `ee-ext` bundles it, validates it against your project, and pushes it. Your
-  `manage_project` client authorizes the push.
+- `commercetools integration-layer extension push` bundles it, validates it against
+  your project, and pushes it. Your `commercetools auth login` session
+  (`manage_project`) authorizes the push.
 - The integration layer stores the bundle, composes it with its own schema, and
   serves the merged API. It also holds the commercetools credentials, so your
   resolvers never touch a CT token.
@@ -66,13 +71,22 @@ extensions. Nothing to install for this part.
 Then publish:
 
 ```bash
-# Clone and install (once)
+# Install the commercetools CLI (once), then add the integration-layer topic. The
+# plugin lives in commercetools' internal Artifact Registry — this repo's .npmrc maps
+# the @commercetools-internal scope; authenticate your npm client to it first (CI does
+# this automatically via Serenity, see the "Config" note below).
+# NB: install from @dev for now — the `plugins` command is only in the CLI's dev
+# prerelease; @latest (0.0.17) predates it. Drop @dev once it ships to @latest.
+npm install -g @commercetools/cli@dev
+commercetools plugins install @commercetools-internal/cli-topic-integration-layer
+
+# Log in once — mints the manage_project token the authenticated commands reuse and
+# sets your target project key
+commercetools auth login --project-key <your-project-key>
+
+# Clone this repo and install its dev dependencies (once)
 git clone <this-repo> && cd integration-layer-extension-examples
 pnpm install
-
-# Point at your project (once); see "Config (.env)" below
-cp .env.example .env
-$EDITOR .env            # INTEGRATION_LAYER_URL, CTP_PROJECT_KEY, CTP_AUTH_URL, CTP_CLIENT_ID/SECRET
 
 # Work inside the template closest to what you want
 cd examples/server-time
@@ -81,9 +95,18 @@ pnpm validate           # composes against YOUR project, reports collisions/brea
 pnpm push               # builds + validates, then publishes; live immediately
 ```
 
-The client in `CTP_CLIENT_ID`/`CTP_CLIENT_SECRET` needs the `manage_project` scope.
-Create one under Merchant Center → Settings → Developer settings → API clients.
-That scope is what authorizes a push, and only `validate` and `push` use it.
+`pnpm setup:cli` (from the repo root) is a shortcut for the `commercetools plugins
+install …` step. Logging in with `commercetools auth login` gives you a
+`manage_project` session — that is what authorizes a push, and only `validate` /
+`push` (and `status` / `delete`, `schema`, `config`) use it. The `pnpm dev` /
+`pnpm validate` / `pnpm push` scripts inside each example are thin aliases for
+`commercetools integration-layer extension serve|validate|push`.
+
+> The plugin is served from commercetools' internal Artifact Registry. This repo's
+> `.npmrc` maps the `@commercetools-internal` scope to it; your npm client just needs
+> a token for that registry. In CI, Serenity provisions the GCP credentials and
+> `google-artifactregistry-auth` appends the token — see the
+> [Working with artifacts guide](https://sd.commercetools.com/getting-started/continuous-integration/working-with-artifacts/).
 
 ## Example templates
 
@@ -122,31 +145,31 @@ cart/order/customer/… create or update. The callback can **approve** the write
 **modify** it (return update actions), or **block** it (return a validation error).
 Unlike a schema extension, it doesn't add fields — it intercepts writes.
 
-Export an `apiExtensions` array of handlers. Use `defineApiExtension` for type
-checking and the `approve` / `block` / `update` helpers to return intent. The
-received payload is the **commercetools SDK's own `ExtensionInput`** — you don't
-define the resource types: narrow on `input.resource.typeId` and `resource.obj` is
-the real `Cart` / `Order` / … (these are type-only imports, erased from the bundle):
+Export an `apiExtensions` array of handlers. A handler returns the plain runtime
+contract — `{}` to approve, `{ errors: [...] }` to block, `{ actions: [...] }` to
+modify. The received payload is the **commercetools SDK's own `ExtensionInput`** —
+you don't define the resource types: narrow on `input.resource.typeId` and
+`resource.obj` is the real `Cart` / `Order` / … (a type-only import, erased from the
+bundle):
 
 ```ts
-import { approve, block, defineApiExtension } from '@example-extensions/tooling/api-extension';
-import type { Cart } from '@commercetools/platform-sdk';
+import type { Cart, ExtensionInput } from '@commercetools/platform-sdk';
 
 export const apiExtensions = [
-  defineApiExtension({
+  {
     key: 'cart-sku-blocker',            // → commercetools extension key octolog-il-cart-sku-blocker
     resourceTypeId: 'cart',             // cart | order | customer | payment | quote | business-unit | shopping-list | …
     actions: ['Create', 'Update'],
-    handler: (input, ctx) => {
+    handler: (input: ExtensionInput, ctx: { config: Record<string, string> }) => {
       const blockedSku = ctx.config.BLOCKED_SKU || 'BLOCKED-SKU';
       // input.resource is the SDK's discriminated Reference union — narrow to
       // get a fully-typed Cart.
       const cart: Cart | undefined = input.resource.typeId === 'cart' ? input.resource.obj : undefined;
       return (cart?.lineItems ?? []).some((li) => li.variant.sku === blockedSku)
-        ? block('InvalidInput', `SKU "${blockedSku}" cannot be added to the cart.`)
-        : approve();
+        ? { errors: [{ code: 'InvalidInput', message: `SKU "${blockedSku}" cannot be added to the cart.` }] }
+        : {};
     },
-  }),
+  },
 ];
 ```
 
@@ -171,14 +194,14 @@ API-Extension callback and a GraphQL field from a single config.
 
 ### Try it locally
 
-`ee-ext invoke` fires a sample commercetools cart callback at your handlers and
-prints the result — no deploy, no credentials:
+`commercetools integration-layer extension invoke` fires a sample commercetools cart
+callback at your handlers and prints the result — no deploy, no credentials:
 
 ```bash
 cd examples/cart-sku-blocker
-pnpm dev                       # → ee-ext invoke — sends the default (blocked) SKU
-pnpm exec ee-ext invoke --sku ALLOWED           # a SKU that passes
-pnpm exec ee-ext invoke --action Update --config BLOCKED_SKU=NO-SELL
+pnpm dev                                                        # → extension invoke — the default (blocked) SKU
+commercetools integration-layer extension invoke --sku ALLOWED  # a SKU that passes
+commercetools integration-layer extension invoke --action Update --config BLOCKED_SKU=NO-SELL
 ```
 
 Then `pnpm validate` / `pnpm push` as usual (an API-extensions-only bundle skips the
@@ -508,15 +531,23 @@ The easy way is the integration layer's Merchant Center console, which has a
 per-project Extension configuration view for adding entries and flagging the secret
 ones. No tokens to juggle.
 
-For automation, hit the config endpoint directly. Send `[{ key, value, secret? }]`
-to `…/api/<project>/extensions/config` with a `manage_project` bearer token:
+For automation, the CLI's `config` commands reuse your `commercetools auth login`
+session — no tokens to juggle:
 
 ```bash
-# Mint a manage_project token (standard commercetools client-credentials flow)
-TOKEN=$(curl -s -u "$CTP_CLIENT_ID:$CTP_CLIENT_SECRET" \
-  -d grant_type=client_credentials -d "scope=manage_project:$CTP_PROJECT_KEY" \
-  "$CTP_AUTH_URL/oauth/token" | node -e 'process.stdin.on("data",d=>console.log(JSON.parse(d).access_token))')
+commercetools integration-layer config set ALGOLIA_APP_ID ABC123
+commercetools integration-layer config set ALGOLIA_INDEX_NAME products
+commercetools integration-layer config set ALGOLIA_API_KEY search-only-key --secret
+commercetools integration-layer config list           # secret VALUES are masked
+commercetools integration-layer config unset OLD_SETTING
+```
 
+Or hit the config endpoint directly with any `manage_project` bearer token (`$TOKEN`
+below — e.g. one minted by a `manage_project` API Client via the client-credentials
+flow, or your login token). Send `[{ key, value, secret? }]` to
+`…/api/<project>/extensions/config`:
+
+```bash
 # Replace the WHOLE config (PUT): the posted set becomes the project's entire config
 curl -X PUT "$INTEGRATION_LAYER_URL/api/$CTP_PROJECT_KEY/extensions/config" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -565,13 +596,14 @@ EXTENSION_CONFIG_ALGOLIA_API_KEY=search-only-key \
   never an admin key.
 - Treat missing config as "not configured" and return `null` or an empty result, so
   an unconfigured project still serves everything else. The templates all do this.
-- Keep secrets out of `extension.ts`, out of any committed `.env`, and out of the
-  bundle. The `.env` here holds only publish credentials, and it is gitignored.
+- Keep secrets out of `extension.ts` and out of the bundle — store them as `secret`
+  config entries instead. Authentication is your `commercetools auth login` session,
+  not a committed file; `.env` here holds only optional overrides and is gitignored.
 
 ## Develop locally (`serve`)
 
-`ee-ext serve` (`pnpm dev`) runs your example as a live GraphQL server with GraphiQL
-and esbuild watch, so you get a real inner loop. It builds the same bundle the
+`commercetools integration-layer extension serve` (`pnpm dev`) runs your example as a
+live GraphQL server with GraphiQL and esbuild watch, so you get a real inner loop. It builds the same bundle the
 runtime loads, serves it as an Apollo Federation v2 subgraph, and calls your
 resolvers with the same `ctx` they would get in production (`ctx.now()`, and
 `ctx.config` from `EXTENSION_CONFIG_*`). Save the file and the schema reloads.
@@ -618,8 +650,8 @@ Local checks run offline and always apply:
    resolver for every type and field the SDL declares (a typo that would silently
    no-op gets caught here).
 
-Remote checks need `.env` and run against your project, the same way publishing
-does:
+Remote checks need a `commercetools auth login` session and run against your project,
+the same way publishing does:
 
 3. **Composition**: your extension is composed with your project's live
    integration-layer subgraph, surfacing bad SDL and collisions (a type or field
@@ -630,29 +662,30 @@ does:
    no baseline, so only check 3 applies.
 
 A failure stops the push with a specific message. If a breaking change is deliberate
-and coordinated, skip the remote checks (3 and 4):
+and coordinated, override the remote checks (3 and 4) with `--force`:
 
 ```bash
-EE_FORCE=1 pnpm push     # reliable form through the pnpm script chain
+commercetools integration-layer extension push --force
 ```
 
-The local checks (1 and 2) always fail hard. A bundle that will not load, reaches
-outside the sandbox, or has resolvers that do not match its SDL is broken no matter
-what you intended. (`ee-ext push --force` works when you call the bin directly, but
-pnpm eats a bare `--force`, so use `EE_FORCE`.)
+The local checks (1 and 2) always fail hard, regardless of `--force`. A bundle that
+will not load, reaches outside the sandbox, or has resolvers that do not match its
+SDL is broken no matter what you intended. (Run the CLI directly for flags like
+`--force`; a bare `pnpm push --force` may be swallowed by pnpm — use `pnpm push --
+--force` to forward it.)
 
 ### All commands
 
 Repo-wide (from the repo root):
 
 ```bash
-pnpm install      # install dev tooling (once)
-pnpm build        # esbuild → each example's dist/extension.js
-pnpm typecheck    # tsc --noEmit across all packages
+pnpm setup:cli    # install the integration-layer CLI plugin (once)
+pnpm install      # install dev dependencies (once)
+pnpm typecheck    # tsc --noEmit across all examples
 pnpm lint         # eslint . (shared root config)
-pnpm test         # vitest: build + validate + per-example tests
+pnpm build        # commercetools integration-layer extension build → each example's dist/ (needs the CLI plugin)
 
-# Per-example validate/push from the root (need .env):
+# Per-example validate/push from the root (need `commercetools auth login`):
 pnpm validate:<name>   pnpm push:<name>   # <name> = server-time | loyalty-points | …
 ```
 
@@ -665,48 +698,45 @@ pnpm validate   # local + remote validation
 pnpm push       # build + validate + publish
 ```
 
-`build`/`typecheck`/`lint`/`test` are offline; `validate`/`push` talk to the
-integration layer and load the shared root `.env`.
+`typecheck`/`lint` are offline; `build`/`dev`/`validate`/`push` run through the
+commercetools CLI, and `validate`/`push` also talk to the integration layer using
+your `commercetools auth login` session.
 
 ## Config (`.env`)
 
-The templates carry no project config of their own. The target project lives in one
-shared `.env` at the repo root (copy `.env.example`):
+Authentication is handled by `commercetools auth login`, not by `.env` — the login
+mints the `manage_project` token the authenticated commands reuse and carries your
+target project key. `.env` (copy `.env.example`) now holds only optional overrides:
 
 | Var | What it is |
 | --- | --- |
-| `INTEGRATION_LAYER_URL` | base URL of the integration layer (defaults to the deployed instance; `http://localhost:8080` for a local one) |
-| `CTP_PROJECT_KEY` | the project to push to (must be one the integration layer serves), not a secret |
-| `CTP_AUTH_URL` | the commercetools auth host for your project's region (used to mint the token) |
-| `CTP_CLIENT_ID` / `CTP_CLIENT_SECRET` | a `manage_project` API Client for that project; only the secret is sensitive |
+| `INTEGRATION_LAYER_URL` | OPTIONAL override of the integration layer edge base URL (defaults to the deployed instance; `http://localhost:8080` for a local one) |
+| `EXTENSION_CONFIG_<KEY>` | OPTIONAL, local-only: feeds `ctx.config.<KEY>` to `serve` / `invoke`, which have no integration layer to read config from |
 
-To target a different project, repoint `.env` or override the vars inline
-(`CTP_PROJECT_KEY=… pnpm push`). The `.env` is gitignored; keep real credentials out
-of git.
+To target a different project, log in with a different `--project-key` (or pass
+`--project-key` to a command). The `.env` is gitignored.
 
 ## Layout
 
 ```
 integration-layer-extension-examples/
-├── .env.example                 # the ONE shared target-project config (no template data)
+├── .env.example                 # optional local overrides (auth is `commercetools auth login`)
 ├── eslint.config.js             # shared flat config; `pnpm lint` runs `eslint .`
-├── packages/
-│   └── tooling/                 # @example-extensions/tooling, the shared flow
-│       ├── bin/ee-ext.mjs       #   the `ee-ext` bin (build|validate|push|serve)
-│       └── src/                 #   build, staticAnalysis, loadBundle, validateBundle,
-│                                #   remoteValidate, compose, gateway, serve, push, …
 └── examples/
     ├── server-time/             # @example-extensions/server-time
     │   └── src/extension.ts      #   the template (the only file you edit)
     ├── loyalty-points/
     ├── price-discount/
     ├── address-format/
-    └── algolia-recommendations/
+    ├── algolia-recommendations/
+    └── cart-sku-blocker/
 ```
 
-The `ee-ext` bin works out the template's entry and output from the directory you
-run it in (`<example>/src/extension.ts` → `<example>/dist/extension.js`) and loads
-the shared `.env`, so the same flow runs from any example.
+The build → validate → push flow is the `integration-layer` topic of the
+commercetools CLI (the published `@commercetools-internal/cli-topic-integration-layer`
+plugin). Its commands work out the template's entry and output from the directory you
+run them in (`<example>/src/extension.ts` → `<example>/dist/extension.js`), so the
+same flow runs from any example.
 
 ## The pipeline
 

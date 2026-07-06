@@ -1,20 +1,11 @@
 packages:
   # The example extension templates — each a self-contained template you work
-  # inside (edit src/extension.ts, then `pnpm validate` / `pnpm push`).
+  # inside (edit src/extension.ts, then `commercetools integration-layer extension
+  # validate` / `... push`). The build → validate → push flow lives in the published
+  # `@commercetools-internal/cli-topic-integration-layer` CLI plugin, installed into
+  # the commercetools CLI (see the README), not in this workspace.
   - 'examples/*'
-  # The shared build → validate → push flow (the `ee-ext` bin) plus its tests.
-  - 'packages/*'
 
-# Pin esbuild to a current release (avoids the older dev-server advisory), and force
-# a patched uuid (transitive via the Apollo federation stack) — uuid 9.x is flagged
-# by CVE-2026-41907; 11.x is the CommonJS-compatible fixed line.
-overrides:
-  esbuild: '^0.28.0'
-  uuid: '^11.1.1'
-
-# Dependency build scripts (pnpm 11 requires each script-bearing dep to be decided):
-# allow esbuild (it links its platform binary); deny the Apollo protobuf optimizations
-# (optional — they were skipped under pnpm 10 too and the suite passes without them).
 allowBuilds:
   esbuild: true
   '@apollo/protobufjs': false

@@ -4,14 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "ee-ext build",
-    "dev": "ee-ext serve",
-    "validate": "ee-ext validate",
-    "push": "ee-ext push",
+    "build": "commercetools integration-layer extension build",
+    "dev": "commercetools integration-layer extension serve",
+    "validate": "commercetools integration-layer extension validate",
+    "push": "commercetools integration-layer extension push",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@example-extensions/tooling": "workspace:*",
     "algoliasearch": "^5.55.0"
   },
   "devDependencies": {
