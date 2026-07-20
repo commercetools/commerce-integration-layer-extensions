@@ -1,0 +1,4 @@
+# CODEOWNERS for the integration-layer-extensions repo.
+#
+# The entire repository is owned by the octolog integration layer team.
+*   @commercetools/octolog-integration-layer
