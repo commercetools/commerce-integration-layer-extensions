@@ -65,18 +65,23 @@ jobs:
         run: pnpm --filter @commercetools-internal/cli-topic-integration-layer build
 
       - name: Authenticate to GCP (direct Workload Identity Federation)
-        id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
-          token_format: access_token
-          # Direct WIF (no service account) — see release.yml / ops-terraform npm_writers.
+          # Direct WIF (no service account) writes an external_account ADC file.
+          # token_format: access_token is NOT available without a service account,
+          # so we mint the registry token from ADC via gcloud below.
           workload_identity_provider: projects/884107378518/locations/global/workloadIdentityPools/production/providers/github
 
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Authenticate npm to the internal Artifact Registry
-        # Seed the workspace-root .npmrc with the OIDC-derived GCP token; pnpm reads
-        # .npmrc (incl. the publish token) from the workspace root even when
-        # publishing a package in packages/*.
-        run: npx -y google-artifactregistry-auth --repo-config=.npmrc --credential-config=.npmrc --token="${{ steps.gcp-auth.outputs.access_token }}"
+        # Mint a federated access token from the direct-WIF ADC (the principalSet is
+        # granted artifactregistry.writer directly) and write it as the registry
+        # _authToken. pnpm reads .npmrc from the workspace root.
+        run: |
+          token="$(gcloud auth application-default print-access-token)"
+          npx -y google-artifactregistry-auth --repo-config=.npmrc --credential-config=.npmrc --token="$token"
 
       - name: Publish
         # Registry + restricted access come from the package's publishConfig.

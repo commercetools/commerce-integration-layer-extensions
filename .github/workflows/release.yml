@@ -77,21 +77,26 @@ jobs:
         run: pnpm --filter @commercetools-internal/cli-topic-integration-layer build
 
       - name: Authenticate to GCP (direct Workload Identity Federation)
-        id: gcp-auth
         uses: google-github-actions/auth@v2
         with:
-          token_format: access_token
           # Direct WIF (no service account): this repo's principalSet is granted
           # Artifact Registry writer directly (ops-terraform npm_writers). The
           # provider is the org's production pool github provider — a stable,
           # non-secret identifier (884107378518 = commercetools-platform project).
+          # This writes an external_account ADC file; token_format: access_token is
+          # NOT available without a service account, so mint the token via gcloud.
           workload_identity_provider: projects/884107378518/locations/global/workloadIdentityPools/production/providers/github
 
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Authenticate npm to the internal Artifact Registry
-        # Seed the workspace-root .npmrc with the OIDC-derived GCP token so
-        # `changeset publish` can push to the @commercetools-internal registry.
-        # (pnpm reads .npmrc — incl. the publish token — from the workspace root.)
-        run: npx -y google-artifactregistry-auth --repo-config=.npmrc --credential-config=.npmrc --token="${{ steps.gcp-auth.outputs.access_token }}"
+        # Mint a federated access token from the direct-WIF ADC and write it as the
+        # registry _authToken so `changeset publish` can push to the
+        # @commercetools-internal registry. (pnpm reads .npmrc from the workspace root.)
+        run: |
+          token="$(gcloud auth application-default print-access-token)"
+          npx -y google-artifactregistry-auth --repo-config=.npmrc --credential-config=.npmrc --token="$token"
 
       - name: Create the Release PR or publish
         uses: changesets/action@v1
