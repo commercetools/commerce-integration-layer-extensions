@@ -5,11 +5,21 @@ packages:
   # `@commercetools-internal/cli-topic-integration-layer` CLI plugin, installed into
   # the commercetools CLI (see the README), not in this workspace.
   - 'examples/*'
+  # The vendored integration-layer CLI plugin (@commercetools-internal/cli-topic-integration-layer).
+  - 'packages/*'
 
 allowBuilds:
   esbuild: true
   '@apollo/protobufjs': false
   protobufjs: false
+  # unrs-resolver ships a native binary; eslint resolves fine without it (pulled by the CLI plugin).
+  unrs-resolver: false
 
 # Refuse dependency versions published less than 24h ago. Minutes; 1440 = 24h.
 minimumReleaseAge: 1440
+
+# Force a patched uuid. The Apollo federation packages (pulled by the CLI plugin's
+# @apollo/composition|gateway|subgraph) transitively depend on uuid 9.0.1, which
+# carries CVE-2026-41907; 11.1.1 is the first patched release keeping the exports they use.
+overrides:
+  uuid: '^11.1.1'

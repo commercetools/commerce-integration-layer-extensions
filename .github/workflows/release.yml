@@ -1,0 +1,98 @@
+name: Release
+
+# Versions and publishes @commercetools-internal/cli-topic-integration-layer via
+# Changesets, on merge to main. Follows the commercetools Changesets convention
+# (release PR managed by the CT Changesets App), adapted to publish to the
+# internal GCP Artifact Registry ("private now"): auth is GitHub -> GCP Workload
+# Identity Federation, the same trust chain `serenity auth gcp` used on CircleCI.
+#
+# There is NO gate: until the prerequisites below are provisioned this workflow
+# FAILS (red) on every push to main. That is intentional — the missing setup
+# stays visible instead of being silently skipped.
+#
+# PREREQUISITES to make it pass (each is a one-time setup, not code):
+#   1. This repo's GitHub Actions OIDC principalSet granted Artifact Registry
+#      writer on commercetools-platform/internal-npm — a DIRECT principalSet grant
+#      (no service account), via the production pool's github provider. Provisioned
+#      by ops-terraform (npm_writers in special-delivery/registry/gcp), which is why
+#      the provider below is hardcoded (a stable, non-secret identifier). CircleCI's
+#      WIF was an org-wide, read-only principalSet; this adds a writer for this repo.
+#   2. The CT Changesets GitHub App installed on the repo, exposing the
+#      CT_CHANGESETS_APP_ID + CT_CHANGESETS_APP_PEM secrets (lets the "Version
+#      Packages" PR trigger CI, which the default GITHUB_TOKEN cannot).
+#
+# To flip to PUBLIC npm later ("public soon"): rename the package scope to
+# @commercetools/cli-topic-integration-layer, drop this GCP-auth block, and add
+# an npm registry _authToken from an NPM_TOKEN secret (the plain ct nodejs model).
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write # required for GCP Workload Identity Federation
+
+jobs:
+  release:
+    name: version + publish (Changesets)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate a GitHub token (CT Changesets App)
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.CT_CHANGESETS_APP_ID }}
+          private-key: ${{ secrets.CT_CHANGESETS_APP_PEM }}
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.8.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22.13'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the CLI plugin
+        run: pnpm --filter @commercetools-internal/cli-topic-integration-layer build
+
+      - name: Authenticate to GCP (direct Workload Identity Federation)
+        id: gcp-auth
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: access_token
+          # Direct WIF (no service account): this repo's principalSet is granted
+          # Artifact Registry writer directly (ops-terraform npm_writers). The
+          # provider is the org's production pool github provider — a stable,
+          # non-secret identifier (884107378518 = commercetools-platform project).
+          workload_identity_provider: projects/884107378518/locations/global/workloadIdentityPools/production/providers/github
+
+      - name: Authenticate npm to the internal Artifact Registry
+        # Seed the workspace-root .npmrc with the OIDC-derived GCP token so
+        # `changeset publish` can push to the @commercetools-internal registry.
+        # (pnpm reads .npmrc — incl. the publish token — from the workspace root.)
+        run: npx -y google-artifactregistry-auth --repo-config=.npmrc --credential-config=.npmrc --token="${{ steps.gcp-auth.outputs.access_token }}"
+
+      - name: Create the Release PR or publish
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset:version
+          publish: pnpm changeset:publish
+          commit: 'ci(changesets): version packages'
+          title: 'ci(changesets): version packages'
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}

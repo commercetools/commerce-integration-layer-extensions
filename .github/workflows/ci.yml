@@ -1,0 +1,61 @@
+name: CI
+
+# Full offline pipeline — no secrets, no internal registry, so it works
+# identically on internal branches and on pull requests from forks:
+#   install → build the vendored CLI plugin → typecheck → lint →
+#   install the public commercetools CLI, link the plugin, build every example.
+#
+# The integration-layer CLI plugin lives in this workspace
+# (packages/cli-topic-integration-layer) and is linked into the public
+# @commercetools/cli via `plugins link`, so the per-example
+# `commercetools integration-layer extension build` runs with no registry auth.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    name: build + typecheck + lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.8.0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22.13'
+          cache: pnpm
+
+      - name: Install dependencies
+        # Public npm only — the vendored plugin is a workspace package and its
+        # deps are all public, so no registry authentication is needed.
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the CLI plugin
+        run: pnpm --filter @commercetools-internal/cli-topic-integration-layer build
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test the CLI plugin
+        run: pnpm --filter @commercetools-internal/cli-topic-integration-layer test
+
+      - name: Install the commercetools CLI + link the vendored plugin
+        # @dev while the `plugins` command is only in the CLI's dev prerelease.
+        run: |
+          npm install --global @commercetools/cli@dev
+          commercetools plugins link packages/cli-topic-integration-layer
+
+      - name: Build every example
+        run: pnpm --filter "./examples/*" build

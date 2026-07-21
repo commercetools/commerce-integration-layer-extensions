@@ -1,5 +1,5 @@
 {
-  "name": "integration-layer-extension-examples",
+  "name": "integration-layer-extensions",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.8.0",
@@ -7,11 +7,14 @@
     "node": ">=22.13"
   },
   "scripts": {
-    "setup:cli": "commercetools plugins install @commercetools-internal/cli-topic-integration-layer",
+    "setup:cli": "pnpm --filter @commercetools-internal/cli-topic-integration-layer build && commercetools plugins link packages/cli-topic-integration-layer",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "pnpm -r test",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "pnpm --filter @commercetools-internal/cli-topic-integration-layer build && changeset publish",
     "dev:server-time": "pnpm --filter @example-extensions/server-time dev",
     "dev:loyalty-points": "pnpm --filter @example-extensions/loyalty-points dev",
     "dev:price-discount": "pnpm --filter @example-extensions/price-discount dev",
@@ -32,6 +35,7 @@
     "push:cart-sku-blocker": "pnpm --filter @example-extensions/cart-sku-blocker push"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.29.7",
     "eslint": "^9.39.4",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.62.1"
