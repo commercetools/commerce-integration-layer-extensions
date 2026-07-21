@@ -1,6 +1,6 @@
 {
   "name": "@commercetools-internal/cli-topic-integration-layer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "commercetools CLI plugin: integration-layer topic",
   "license": "MIT",
   "type": "module",
