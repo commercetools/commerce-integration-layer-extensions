@@ -24,15 +24,6 @@ importers:
         specifier: ^8.62.1
         version: 8.62.1(eslint@9.39.4(supports-color@8.1.1))(supports-color@8.1.1)(typescript@5.9.3)
 
-  examples/address-format:
-    devDependencies:
-      '@types/node':
-        specifier: ^22.10.2
-        version: 22.19.21
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-
   examples/algolia-recommendations:
     dependencies:
       algoliasearch:
@@ -51,6 +42,15 @@ importers:
       '@commercetools/platform-sdk':
         specifier: 8.25.0
         version: 8.25.0
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.21
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  examples/customer-display-name:
+    devDependencies:
       '@types/node':
         specifier: ^22.10.2
         version: 22.19.21
@@ -3186,7 +3186,7 @@ snapshots:
     dependencies:
       agent-base: 7.1.4
       http-proxy-agent: 7.0.2(supports-color@8.1.1)
-      https-proxy-agent: 7.0.6
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       lru-cache: 11.5.2
       socks-proxy-agent: 8.0.5(supports-color@8.1.1)
     transitivePeerDependencies:
@@ -4080,7 +4080,7 @@ snapshots:
   gaxios@6.7.1:
     dependencies:
       extend: 3.0.2
-      https-proxy-agent: 7.0.6
+      https-proxy-agent: 7.0.6(supports-color@8.1.1)
       is-stream: 2.0.1
       node-fetch: 2.7.0
       uuid: 11.1.1
@@ -4193,7 +4193,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  https-proxy-agent@7.0.6:
+  https-proxy-agent@7.0.6(supports-color@8.1.1):
     dependencies:
       agent-base: 7.1.4
       debug: 4.4.3(supports-color@8.1.1)

@@ -127,9 +127,9 @@ There are **two kinds** of extension, and a bundle may export either or both:
 | --- | --- | --- | --- |
 | **server-time** | schema | New type + root field (`Query.serverTime`) | add a brand-new query or type that shares nothing with the integration layer |
 | **loyalty-points** | schema | Field on an entity from an *argument* (`Product.loyaltyPoints`) | add a field to every product, computed without reading any product data |
-| **price-discount** | schema | Field from the object's own data via `@requires` (`ProductPrice.discountedAmount`) | compute from a field the integration layer owns (a nested value) |
-| **address-format** | schema | `@requires` over scalar fields (`Address.formatted`) | compute from plain scalar fields the integration layer owns |
-| **algolia-recommendations** | schema | External service + field `@override` (`Product.recommendations`, `Query.productSearch`) | call out to a vendor API, and/or take over an existing field |
+| **price-discount** | schema | Field from a value the integration layer owns via `@requires` (`Product.discountedPrice`) | compute from a field the integration layer owns (a nested value) |
+| **customer-display-name** | schema | `@requires` over scalar fields (`Customer.displayName`) | compute from plain scalar fields the integration layer owns |
+| **algolia-recommendations** | schema | External service returning entity stubs (`Product.recommendations`) | call out to a vendor API and return products the integration layer resolves |
 | **cart-sku-blocker** | API Extension + GraphQL | Block SKUs from carts (`cart` Create/Update) *and* expose a `blockedSkus` query, from one shared config | validate or modify a cart/order/… write before it is saved — and see one bundle do both |
 
 > Each project holds one bundle, so a second push replaces the first. The templates
@@ -221,12 +221,10 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@
 | Directive | Use it to | Notes |
 | --- | --- | --- |
 | `@link` | import the federation spec and the directives below | always the first line of `typeDefs` |
-| `@key(fields: "id")` | mark a type as an entity you're attaching to | re-declare only the key field(s) |
-| `@interfaceObject` | attach a field to every `Product` at once | `Product` only (it is an entity *interface*); saves enumerating concrete product types |
-| `extend type` | attach a field to an object entity (`Order`, `Cart`, …) | the non-`Product` equivalent of `@interfaceObject` |
-| `@external` | reference a field the integration layer owns | for `@key`/`@requires` only; you never resolve it |
+| `@key(fields: "id")` | mark a type as an entity you're attaching to | re-declare the key field NON-`@external` (it identifies the entity); add your new fields alongside |
+| `@external` | reference a NON-key field the integration layer owns | for `@requires` only; you never resolve it. Do NOT put it on the key field — that stops the planner satisfying `@requires` (and stops you returning the entity as a stub) |
 | `@requires(fields: "…")` | pull integration-layer-owned data into your resolver | the planner resolves it onto the resolver's `parent` |
-| `@override(from: "integration-layer")` | take over an existing field | re-declare referenced types; the integration layer still serves it directly |
+| `@override(from: "integration-layer")` | take over an existing field | re-declare referenced types. Works for a field whose result types are its OWN; do NOT override a field whose result reuses SHARED value types (e.g. the Relay `Query.search` → `ProductSearchConnection`, which reuses `PageInfo`/`ProductEdge`) — overriding those seizes them graph-wide and breaks other connections |
 | `@shareable` | co-own a field with the integration layer | rarely needed; prefer a new field. An unshared duplicate fails composition |
 
 The rule of thumb is to add new fields rather than redefine existing ones. If your
@@ -265,14 +263,17 @@ export const resolvers = {
 ### A field on a product (or any entity)
 
 The integration layer exposes its top-level resources as federation entities keyed
-by `id`, so you can attach a field to one by re-declaring just its key. `Product` is
-an entity interface, so `@interfaceObject` lets you hit every product at once.
-(`examples/loyalty-points`.)
+by `id`, so you can attach a field to one by re-declaring the type with its key and
+your new field. In the v2 contract `Product` is a single CONCRETE object entity
+(there is no interface + concrete-subtype model any more), so a plain
+`type Product @key(fields: "id")` hits every product — no `@interfaceObject`. The key
+field is declared NORMALLY (not `@external`): it identifies the entity the router
+routes on. (`examples/loyalty-points`.)
 
 ```graphql
-extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@interfaceObject"])
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
 
-type Product @key(fields: "id") @interfaceObject {
+type Product @key(fields: "id") {
   id: ID!
   loyaltyPoints(price: Float!): Int!
 }
@@ -287,38 +288,43 @@ export const resolvers = {
 };
 ```
 
-For the object entities (`Order`, `Cart`, `Customer`, and so on) use `@key` with
-`extend type` instead. The [entity catalog](#entity-catalog) lists them all.
+The same shape works for the other object entities (`Order`, `Cart`, `Customer`, and
+so on) — `type <Entity> @key(fields: "id") { id: ID!  <newField> }`. The
+[entity catalog](#entity-catalog) lists them all.
 
 ```graphql
-extend type Order @key(fields: "id") { id: ID!  priorityScore: Int! }
+type Order @key(fields: "id") { id: ID!  priorityScore: Int! }
 ```
 
 ### A field computed from data the integration layer owns
 
-When your field depends on data the integration layer owns, mark those fields
-`@external` and name them in `@requires`. The planner fetches them and passes them
-to your resolver, so you read the data without owning it. (`examples/price-discount`
-for a nested value, `examples/address-format` for scalars.)
+When your field depends on data the integration layer owns, mark those (NON-key)
+fields `@external` and name them in `@requires`. The planner fetches them and passes
+them to your resolver, so you read the data without owning it. Keep the key field
+(`id`) non-`@external`, or the planner can't satisfy the `@requires`.
+(`examples/price-discount` for a nested value, `examples/customer-display-name` for
+scalars.)
 
 ```graphql
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@requires", "@external"])
 
-type Money { centAmount: Int! @external }
-type ProductPrice @key(fields: "id") {
-  id: ID!
-  value: Money! @external
-  discountedAmount(percentOff: Int!): Int! @requires(fields: "value { centAmount }")
+type Money { amount: String! @external }   # v2 Money is { amount, currencyCode, formatted } — no centAmount
+type Product @key(fields: "id") {
+  id: ID!                                   # the key: NON-@external
+  price: Money @external
+  discountedPrice(percentOff: Int!): String @requires(fields: "price { amount }")
 }
 ```
 
 ```ts
 export const resolvers = {
-  ProductPrice: {
-    // parent carries { id } plus the @requires fields: { value: { centAmount } }
-    discountedAmount: (price, { percentOff }) => {
+  Product: {
+    // parent carries { id } plus the @requires fields: { price: { amount } }
+    discountedPrice: (product, { percentOff }) => {
+      const amount = product.price?.amount;
+      if (amount == null) return null;      // price is entitlement-gated → nullable
       const pct = Math.min(100, Math.max(0, percentOff));
-      return Math.round((price.value.centAmount * (100 - pct)) / 100);
+      return ((Number(amount) * (100 - pct)) / 100).toFixed(2);
     },
   },
 };
@@ -334,10 +340,10 @@ and make the field nullable so an outage degrades to `null` instead of taking do
 the whole product. (`examples/algolia-recommendations`.)
 
 ```graphql
-extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@interfaceObject"])
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
 
-type Product @key(fields: "id") @interfaceObject {
-  id: ID!
+type Product @key(fields: "id") {
+  id: ID!                                     # NON-@external: this resolver RETURNS Product stubs, so it must provide the key
   recommendations: [ProductRecommendation!]   # nullable list, safe to degrade
 }
 type ProductRecommendation { product: Product!  reason: String! }
@@ -376,26 +382,34 @@ on this under [returning entities](#returning-entities-stubs).
 
 ### Taking over an existing field (`@override`)
 
-To replace a field the integration layer already serves, say to run
-`Query.productSearch` off your own search engine, claim it with
+To replace a field the integration layer already serves, claim it with
 `@override(from: "integration-layer")`. Federation cannot import types across
-subgraphs, so you have to re-declare the field's argument and result types and
-`@override` each one. The integration layer keeps serving the field directly; the
-override only changes who owns it in the routed graph.
-(`examples/algolia-recommendations`.)
+subgraphs, so you re-declare the field's argument and result types and `@override`
+each one. The integration layer keeps serving the field directly; the override only
+changes who owns it in the routed graph.
+
+**This works only when the field's result types are its OWN.** If the result reuses
+types shared with other fields, `@override`ing those fields seizes them graph-wide
+and breaks the other fields that use them. The v2 discovery field
+`Query.search: ProductSearchConnection!` is exactly this trap: its
+`ProductSearchConnection` reuses the shared Relay `PageInfo` and `ProductEdge`
+(used by every other connection), and the integration layer emits no `@shareable`
+for co-ownership — so there is no faithful way to `@override` `search` from an
+extension. (v1's `algolia-recommendations` overrode a search-specific
+`ProductSearchResult`, which had no shared types; v2 removed that surface, so the
+example now ships the recommendations pattern only.) Reach for `@override` on a
+field whose result you fully own, e.g.:
 
 ```graphql
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@override"])
 
 type Query {
-  productSearch(input: ProductSearchInput!): ProductSearchResult! @override(from: "integration-layer")
+  # a field whose result type (MyResult) is declared and owned entirely by this subgraph
+  featuredProducts: MyResult! @override(from: "integration-layer")
 }
-type ProductSearchResult {
-  items: [Product!]! @override(from: "integration-layer")
-  total: Int!        @override(from: "integration-layer")
-  # …re-declare every field you return, each @override(from: "integration-layer")
+type MyResult {
+  items: [Product!]!   # Product is an entity: return { id } stubs, the router resolves the rest
 }
-# …plus the input types your field references
 ```
 
 Return product stubs in `items` and the router fills in the rest, so callers see no
@@ -411,27 +425,26 @@ instead of the opaque id.
 
 | Type | `id` key | `key` key | Notes |
 | --- | --- | --- | --- |
-| `Product` | yes | optional | entity interface, use `@interfaceObject` |
-| `Category`, `Quote`, `QuoteRequest`, `Wishlist`, `PurchaseList`, `ApprovalRule`, `RecurrencePolicy` | yes | optional | `@key` + `extend type`; `key` resolves only where present |
-| `BusinessUnit`, `AssociateRole` | yes | yes (non-null) | always keyable by `key` |
-| `Cart`, `Order`, `Customer`, `Review`, `ApprovalFlow`, `RecurringOrder` | yes | n/a | `id`-only |
+| `Product` | yes | optional | concrete object entity (v2 — no interface); `type Product @key(fields: "id")` |
+| `Customer`, `BusinessUnit`, `Category`, `ApprovalRule`, `RecurrencePolicy` | yes | yes | `@key` by `id` or the readable `key` |
+| `Cart`, `Order`, `Quote`, `QuoteRequest`, `Review`, `ShoppingList`, `ApprovalFlow`, `RecurringOrder` | yes | n/a | `id`-only (`ShoppingList` is v2's unified wishlist + purchase list) |
+| `AssociateRole` | n/a | yes | `key`-only (v2 exposes just `{ key, name }`) |
 
-A handful of nested objects are keyed too, just so you can decorate them with
-`@requires`:
-
-| Type | Keys | Notes |
-| --- | --- | --- |
-| `ProductPrice` | `id` | a product's price entry |
-| `Address` | `id` and `key` (both nullable) | shared across customer/BU/cart/order, so your field appears on every address; keys are nullable because inline cart/order addresses may lack an `id` |
-
-Keying by an optional `key` is a judgement call. The field only resolves for
+Keying by an optional `key` is a judgement call: the field only resolves for
 instances that actually have one, and a non-null field nulls out where the key is
-missing. Stick with `id` unless you specifically need inline addresses, which may
-carry only a `key`.
+missing — stick with `id` unless you need the readable handle.
+
+**No nested types are extensibly keyed in the current v2 surface.** (v1 let you
+`@requires`-decorate a keyed `ProductPrice` and `Address`; v2 has no standalone
+`ProductPrice` entity, and `Address` is now a keyless embedded snapshot — the
+address book moved to `SavedAddress`, which is not an extensible/join-target
+entity.) Compute price/address-derived fields on the OWNING entity instead — e.g.
+`Product.discountedPrice` from `Product.price` (`examples/price-discount`), or a
+scalar-derived field on `Customer` (`examples/customer-display-name`).
 
 Everything else is off limits: value types (`Money`, images), reference wrappers
-(`*Ref`), embedded sub-objects (`LineItem`), and product variants (whose `id` is a
-per-product `Int`, not a global key).
+(`*Ref`), embedded sub-objects (`LineItem`, `Address`), and product variants (whose
+`id` is a per-product composite, not a global entity key).
 
 ## Resolver mechanics
 
@@ -446,7 +459,7 @@ fieldName: async (parent, args, ctx) => result       // async (e.g. a fetch)
 - `parent` is whatever the field hangs off. Root fields (`Query.*`) ignore it; on an
   entity field it is the representation the integration layer resolved, `{ id }`,
   plus anything you pulled in with `@requires`. So
-  `@requires(fields: "value { centAmount }")` gives you `{ id, value: { centAmount } }`
+  `@requires(fields: "price { amount }")` gives you `{ id, price: { amount } }`
   and nothing you did not ask for.
 - `args` is the field's arguments, typed as you declared them in the SDL.
 - `ctx` carries the host's capabilities. The runtime is sandboxed (see
@@ -727,7 +740,7 @@ integration-layer-extension-examples/
     │   └── src/extension.ts      #   the template (the only file you edit)
     ├── loyalty-points/
     ├── price-discount/
-    ├── address-format/
+    ├── customer-display-name/
     ├── algolia-recommendations/
     └── cart-sku-blocker/
 ```
@@ -756,13 +769,14 @@ examples/<name>  ──push──▶  integration layer            extensions ru
    SDL to the schema registry. Edit, push, and the live extension changes, with no
    redeploy.
 
-## Flow: a storefront product search through the Algolia override
+## Flow: a storefront reading Algolia recommendations
 
-When the `algolia-recommendations` extension is live, a storefront `productSearch`
-is powered by your search engine at the edge (the `@override`), but the rich product
-detail still comes from the integration layer (the federation join target). The
-router runs the whole plan, so the storefront sends one query and gets back the same
-`ProductSearchResult` shape it always has.
+When the `algolia-recommendations` extension is live, a storefront asks for a
+product plus its `recommendations`. The extension ranks the recommended products
+with Algolia and returns them as bare `Product` stubs; the rich product detail
+(for the product AND each recommendation) still comes from the integration layer
+(the federation join target). The router runs the whole plan, so the storefront
+sends one query and gets back fully-resolved products.
 
 ```mermaid
 sequenceDiagram
@@ -774,24 +788,26 @@ sequenceDiagram
     participant T as Integration layer
     participant CT as commercetools
 
-    SF->>R: productSearch query + session bearer
-    Note over R: Per-project planner. @override means<br/>productSearch is owned by the extension.
+    SF->>R: product(id) { …, recommendations { product { …} } } + session bearer
+    Note over R: Per-project planner. recommendations<br/>is owned by the extension subgraph.
 
-    R->>X: productSearch(input)  (subgraph fetch)
-    X->>AL: algoliasearch SDK searchSingleIndex (over global fetch)
-    AL-->>X: hits with objectID, nbHits, facets
-    X-->>R: ProductSearchResult with item stubs
+    R->>T: resolve the product (owned by the integration layer)
+    T-->>R: Product fields + { id } for the recommendations join
+    R->>X: Product.recommendations  (subgraph fetch, parent { id })
+    X->>AL: algoliasearch Recommend SDK (over global fetch)
+    AL-->>X: recommended hits with objectID
+    X-->>R: [{ product: { id }, reason }]  (bare Product stubs)
 
-    Note over R: items are bare Product stubs.<br/>Other Product fields are owned by the<br/>integration layer, so plan an entities fetch.
+    Note over R: recommendation products are bare stubs.<br/>Their other fields are owned by the<br/>integration layer, so plan an entities fetch.
 
-    R->>T: _entities for the product ids + session bearer
-    Note over T: Resolves each id through a scoped loader<br/>and picks the concrete product type.
+    R->>T: _entities for the recommended product ids + session bearer
+    Note over T: Resolves each id through a scoped loader.
     T->>CT: product projections by id
     CT-->>T: product projections
     T-->>R: resolved Product fields, null for misses
 
     Note over R: Merge Algolia ranking with the<br/>integration layer's resolved Product fields.
-    R-->>SF: ProductSearchResult (Algolia ranking + rich detail)
+    R-->>SF: product + fully-resolved recommendations
 ```
 
 The trust boundary stays in the integration layer. The `_entities` re-entry runs

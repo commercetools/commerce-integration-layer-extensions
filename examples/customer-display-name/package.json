@@ -1,5 +1,5 @@
 {
-  "name": "@example-extensions/address-format",
+  "name": "@example-extensions/customer-display-name",
   "version": "0.1.0",
   "private": true,
   "type": "module",
