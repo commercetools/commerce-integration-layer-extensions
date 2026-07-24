@@ -33,13 +33,22 @@ export interface IlFlagValues {
 }
 
 /**
- * Resolve the integration-layer edge base URL from the principal's region. Deferred:
- * octolog has no region→edge-host map yet (its single staging edge isn't a per-region
- * production host), so this returns undefined and the URL must come from
- * `--integration-layer-url` / `INTEGRATION_LAYER_URL`. See TODO.md.
+ * Derive the integration-layer EXTENSIONS edge base URL from the authenticated
+ * principal's commercetools region. The extensions edge — the connector-backend pod
+ * that serves the CLI's `/<project>/subgraph` + `/<project>/extension/*` routes —
+ * follows the same host convention as the commercetools API itself
+ * (`<svc>.<region>.commercetools.com`, cf. the auth client's
+ * `auth.<region>.commercetools.com`), so a login in region `eu-central-1.aws`
+ * resolves to `https://extensions.integration-layer.eu-central-1.aws.commercetools.com`
+ * (the production host). `--integration-layer-url` / `INTEGRATION_LAYER_URL` stays
+ * the explicit override — e.g. to point at a local edge or a staging edge on the
+ * escemo/stage zone, which don't follow the production convention. Returns undefined
+ * only when the region is absent, so resolveIlContext then fails loudly.
  */
-function edgeUrlForRegion(_region: string): string | undefined {
-  return undefined;
+export function edgeUrlForRegion(region: string): string | undefined {
+  const trimmed = region.trim();
+  if (!trimmed) return undefined;
+  return `https://extensions.integration-layer.${trimmed}.commercetools.com`;
 }
 
 export abstract class IntegrationLayerCommand extends AuthCommand {
@@ -54,7 +63,7 @@ export abstract class IntegrationLayerCommand extends AuthCommand {
   static override baseFlags = {
     "integration-layer-url": Flags.string({
       description:
-        "integration-layer edge base URL (defaults to INTEGRATION_LAYER_URL; else derived from the login region)",
+        "integration-layer extensions edge base URL (also settable via INTEGRATION_LAYER_URL); overrides the URL derived from your login region",
       env: "INTEGRATION_LAYER_URL",
       helpGroup: "INTEGRATION LAYER",
     }),
@@ -96,8 +105,8 @@ export abstract class IntegrationLayerCommand extends AuthCommand {
     if (!baseUrl) {
       throw new Error(
         "could not resolve the integration layer URL: pass --integration-layer-url or set " +
-          "INTEGRATION_LAYER_URL (the edge base, e.g. " +
-          "https://integration-layer.stage.europe-west1.gcp.commercetools.com)",
+          "INTEGRATION_LAYER_URL (the extensions edge base, e.g. " +
+          "https://extensions.integration-layer.eu-central-1.aws.commercetools.com)",
       );
     }
 
