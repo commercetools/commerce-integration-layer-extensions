@@ -1,9 +1,8 @@
-# @commercetools-internal/cli-topic-integration-layer
+# @commercetools/cli-topic-integration-layer
 
-An **internal** [commercetools CLI](https://github.com/commercetools/cli) plugin that
-adds the `integration-layer` topic. It is published to the internal Artifact Registry
-and installed on demand as a runtime oclif plugin — it is never bundled into the public
-`@commercetools/cli`.
+A [commercetools CLI](https://github.com/commercetools/cli) plugin that adds the
+`integration-layer` topic. It is published to the public npm registry and installed on
+demand as a runtime oclif plugin — it is never bundled into the base `@commercetools/cli`.
 
 ## Install
 
@@ -13,9 +12,8 @@ and installed on demand as a runtime oclif plugin — it is never bundled into t
 # @latest once plugin-plugins is promoted to the latest release.
 npm install -g @commercetools/cli@dev
 
-# Opt in to the integration-layer topic (needs the @commercetools-internal scope
-# mapped + authed in your ~/.npmrc — see the CLI repo README)
-commercetools plugins install @commercetools-internal/cli-topic-integration-layer
+# Opt in to the integration-layer topic (public npm — no auth needed)
+commercetools plugins install @commercetools/cli-topic-integration-layer
 ```
 
 ## Commands

@@ -13,7 +13,7 @@ with no redeploy.
 There is nothing to run here. You get a set of example extensions under `examples/*`,
 and the build → validate → push flow lives in the **commercetools CLI**: the
 `integration-layer` topic, added by the published
-`@commercetools-internal/cli-topic-integration-layer` plugin (see
+`@commercetools/cli-topic-integration-layer` plugin (see
 [Quickstart](#quickstart)).
 
 ## Contents
@@ -72,13 +72,11 @@ Then publish:
 
 ```bash
 # Install the commercetools CLI (once), then add the integration-layer topic. The
-# plugin lives in commercetools' internal Artifact Registry — this repo's .npmrc maps
-# the @commercetools-internal scope; authenticate your npm client to it first (CI does
-# this automatically via Serenity, see the "Config" note below).
+# plugin is published to the public npm registry, so no auth or scope mapping is needed.
 # NB: install from @dev for now — the `plugins` command is only in the CLI's dev
 # prerelease; @latest (0.0.17) predates it. Drop @dev once it ships to @latest.
 npm install -g @commercetools/cli@dev
-commercetools plugins install @commercetools-internal/cli-topic-integration-layer
+commercetools plugins install @commercetools/cli-topic-integration-layer
 
 # Log in once — mints the manage_project token the authenticated commands reuse and
 # sets your target project key
@@ -102,11 +100,10 @@ install …` step. Logging in with `commercetools auth login` gives you a
 `pnpm validate` / `pnpm push` scripts inside each example are thin aliases for
 `commercetools integration-layer extension serve|validate|push`.
 
-> The plugin is served from commercetools' internal Artifact Registry. This repo's
-> `.npmrc` maps the `@commercetools-internal` scope to it; your npm client just needs
-> a token for that registry. In CI, Serenity provisions the GCP credentials and
-> `google-artifactregistry-auth` appends the token — see the
-> [Working with artifacts guide](https://sd.commercetools.com/getting-started/continuous-integration/working-with-artifacts/).
+> The plugin is published to the public npm registry, so `commercetools plugins
+> install` needs no auth or scope mapping. In CI it is published on a version tag
+> via npm Trusted Publishing (OIDC) — no stored token; see
+> `.github/workflows/publish-release.yml`.
 
 ## Example templates
 
@@ -746,7 +743,7 @@ integration-layer-extension-examples/
 ```
 
 The build → validate → push flow is the `integration-layer` topic of the
-commercetools CLI (the published `@commercetools-internal/cli-topic-integration-layer`
+commercetools CLI (the published `@commercetools/cli-topic-integration-layer`
 plugin). Its commands work out the template's entry and output from the directory you
 run them in (`<example>/src/extension.ts` → `<example>/dist/extension.js`), so the
 same flow runs from any example.

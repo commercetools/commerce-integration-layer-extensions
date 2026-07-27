@@ -2,10 +2,10 @@ packages:
   # The example extension templates — each a self-contained template you work
   # inside (edit src/extension.ts, then `commercetools integration-layer extension
   # validate` / `... push`). The build → validate → push flow lives in the published
-  # `@commercetools-internal/cli-topic-integration-layer` CLI plugin, installed into
+  # `@commercetools/cli-topic-integration-layer` CLI plugin, installed into
   # the commercetools CLI (see the README), not in this workspace.
   - 'examples/*'
-  # The vendored integration-layer CLI plugin (@commercetools-internal/cli-topic-integration-layer).
+  # The vendored integration-layer CLI plugin (@commercetools/cli-topic-integration-layer).
   - 'packages/*'
 
 allowBuilds:

@@ -1,5 +1,5 @@
 {
-  "name": "@commercetools-internal/cli-topic-integration-layer",
+  "name": "@commercetools/cli-topic-integration-layer",
   "version": "0.2.0",
   "description": "commercetools CLI plugin: integration-layer topic",
   "license": "MIT",
@@ -11,8 +11,8 @@
     "README.md"
   ],
   "publishConfig": {
-    "access": "restricted",
-    "registry": "https://europe-npm.pkg.dev/commercetools-platform/internal-npm/"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "clean": "rimraf dist",

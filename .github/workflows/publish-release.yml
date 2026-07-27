@@ -1,0 +1,88 @@
+name: Publish Release
+
+# Publishes @commercetools/cli-topic-integration-layer to the PUBLIC npm registry
+# via npm Trusted Publishing (OIDC) — no Changesets, no GitHub App, no stored token.
+#
+# Push a version tag and this publishes that version:
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+#
+# The tag version MUST match the plugin's package.json version (guarded below) —
+# package.json is the source of truth; the tag is just the release trigger.
+#
+# Auth is npm Trusted Publishing: `actions/setup-node` with `registry-url` +
+# `id-token: write` makes the npm CLI mint a short-lived OIDC token at publish
+# time. The trust is bound on the npm side to (repo, workflow-filename), which is
+# why publishing lives in this ONE file — a trusted publisher covers one workflow.
+#
+# It publishes nothing on its own: it runs only when a `v*` tag is pushed. Until
+# the trusted publisher is provisioned (see the ct-apps Package request), a tag
+# push fails red at the publish step — there is no fallback token.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: read
+  id-token: write # required for npm Trusted Publishing (OIDC)
+
+jobs:
+  publish:
+    name: publish to public npm (OIDC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.8.0
+
+      # setup-node with registry-url + id-token:write is what configures npm OIDC.
+      - name: Use Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      # OIDC trusted publishing needs npm >= 11.5.1. npm@12 currently ships a
+      # broken sigstore dependency, so pin to the 11 line (as MCAK does).
+      - name: Ensure npm >= 11.5.1 for OIDC
+        run: npm install -g npm@11
+
+      - name: Verify the tag matches the package version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(node -p "require('./packages/cli-topic-integration-layer/package.json').version")"
+          echo "tag=$tag_version package.json=$pkg_version"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package version $pkg_version — bump package.json or fix the tag"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the CLI plugin
+        run: pnpm --filter @commercetools/cli-topic-integration-layer build
+
+      - name: Publish to public npm (OIDC)
+        # Registry + public access come from the package's publishConfig. npm (>=
+        # 11.5.1) mints the OIDC token from the trusted-publisher binding — no token
+        # env. Tolerate a re-run for an already-published version.
+        working-directory: packages/cli-topic-integration-layer
+        run: |
+          if out=$(npm publish 2>&1); then
+            echo "$out"
+          else
+            echo "$out"
+            echo "$out" | grep -qiE 'cannot publish over|already exists|EPUBLISHCONFLICT|409' || exit 1
+            echo ">> version already published, nothing to do"
+          fi
