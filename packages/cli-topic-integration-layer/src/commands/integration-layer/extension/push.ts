@@ -4,6 +4,7 @@ import { Flags } from "@oclif/core";
 import { buildBundle, defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
 import { validateBundle, BundleValidationError } from "../../../lib/tooling/validateBundle.js";
 import { pushBundle, remoteValidate, type RemoteValidationResult } from "../../../lib/ilClient.js";
+import { resolveSourceRevision } from "../../../lib/sourceRevision.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
 
 export default class ExtensionPush extends IntegrationLayerCommand {
@@ -13,6 +14,8 @@ export default class ExtensionPush extends IntegrationLayerCommand {
   static override examples = [
     "<%= config.bin %> integration-layer extension push",
     "<%= config.bin %> integration-layer extension push --force",
+    "<%= config.bin %> integration-layer extension push --source-revision r48211",
+    "<%= config.bin %> integration-layer extension push --no-source-revision",
   ];
 
   static override flags = {
@@ -21,6 +24,20 @@ export default class ExtensionPush extends IntegrationLayerCommand {
     force: Flags.boolean({
       char: "f",
       description: "upload despite a failing REMOTE validation (the local check always hard-fails)",
+      default: false,
+    }),
+    // Provenance. The default is auto-detection from the working copy, so a plain
+    // `push` records where the build came from with no ceremony; the flag is for a
+    // non-git VCS, a CI build id, or anything else the integrator identifies revisions
+    // by (the integration layer stores an opaque string).
+    "source-revision": Flags.string({
+      description:
+        "version-control revision this build came from (default: detected from the git working copy; also settable via EXTENSION_SOURCE_REVISION)",
+      env: "EXTENSION_SOURCE_REVISION",
+      exclusive: ["no-source-revision"],
+    }),
+    "no-source-revision": Flags.boolean({
+      description: "push without recording any source revision",
       default: false,
     }),
   };
@@ -82,9 +99,31 @@ export default class ExtensionPush extends IntegrationLayerCommand {
 
     const bundle = await readFile(outfile, "utf8");
     const filename = `${basename(outfile).replace(/\.[^.]+$/, "")}.cjs`;
+
+    // Which of the integrator's revisions this build came from. Reported so the
+    // Merchant Center, the connector's log lines and `{ _extensionBundle }` can all
+    // name it. Detected from the working copy unless the caller said otherwise; a
+    // build outside version control simply reports none (see sourceRevision.ts).
+    const sourceRevision = flags["no-source-revision"]
+      ? undefined
+      : await resolveSourceRevision(flags["source-revision"], process.cwd());
+    if (sourceRevision) {
+      this.log(`Source revision: ${sourceRevision}`);
+    } else if (!flags["no-source-revision"]) {
+      // Say so rather than staying silent: the operator console and the connector
+      // logs will show no revision for this push, and that's worth knowing now.
+      this.logToStderr(
+        "⚠ no source revision detected (not a git checkout?) — pushing without one. " +
+          "Pass --source-revision to record one explicitly.",
+      );
+    }
+
     const url = `${baseUrl}/${encodeURIComponent(projectKey)}/extension/bundle`;
     this.log(`Pushing extension bundle (${bundle.length} bytes) → ${url}`);
-    const meta = await pushBundle(baseUrl, projectKey, token, bundle, filename);
+    const meta = await pushBundle(baseUrl, projectKey, token, bundle, filename, sourceRevision);
     this.log(`✓ stored revision ${meta.version} (${meta.length} bytes, filename ${meta.filename ?? filename})`);
+    if (meta.sourceRevision) {
+      this.log(`  built from ${meta.sourceRevision}`);
+    }
   }
 }

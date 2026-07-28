@@ -684,6 +684,54 @@ SDL is broken no matter what you intended. (Run the CLI directly for flags like
 `--force`; a bare `pnpm push --force` may be swallowed by pnpm — use `pnpm push --
 --force` to forward it.)
 
+### Which revision is deployed (`sourceRevision`)
+
+Every push records **your own version-control revision** for the bundle, so you can
+tell which of your commits a project is actually running. `push` reads it from the
+working copy — no flag, nothing to configure:
+
+```
+$ commercetools integration-layer extension push
+Source revision: v1.4.2-3-g1a2b3c4d-dirty
+...
+✓ stored revision 7 (18213 bytes, filename extension.cjs)
+  built from v1.4.2-3-g1a2b3c4d-dirty
+```
+
+It is `git describe --tags --always`, so you get the most meaningful identifier
+available: an exact tag (`v1.4.2`), a tag plus distance and commit
+(`v1.4.2-3-g1a2b3c4d`), or the bare commit if you have no tags. A `-dirty` suffix
+means the directory you pushed from had uncommitted **or untracked** changes — the
+artifact isn't the tagged code, and the recorded revision says so.
+
+Once stored, the revision shows up in three places:
+
+- `commercetools integration-layer extension status` — `built from: …`
+- the **Merchant Center** extension panel, next to the stored bundle
+- every log line the extension runtime emits, as `extension_source_revision`
+- and over GraphQL, on any project's endpoint:
+
+  ```graphql
+  { _extensionBundle { version sourceRevision } }
+  ```
+
+  A platform-provided field on every extension subgraph — you don't declare it, and
+  it answers "what is deployed right now?" without leaving your API client.
+
+**Not using git?** The integration layer stores the value as an opaque string, so pass
+whatever identifies a revision in your system — an hg/svn/Perforce id, a CI build
+number:
+
+```bash
+commercetools integration-layer extension push --source-revision r48211
+# or, in CI:
+EXTENSION_SOURCE_REVISION="$BUILD_ID" commercetools integration-layer extension push
+```
+
+Use `--no-source-revision` to push without recording one. Nothing is recorded when
+there's nothing to detect either — a value is never invented, since a made-up
+revision in the Merchant Center and in every log line is worse than none.
+
 ### All commands
 
 Repo-wide (from the repo root):

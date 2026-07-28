@@ -20,5 +20,8 @@ export default class ExtensionStatus extends IntegrationLayerCommand {
     this.log(`  uploaded:   ${new Date(meta.uploadedAt).toISOString()}`);
     if (meta.filename) this.log(`  filename:   ${meta.filename}`);
     if (meta.updatedBy) this.log(`  updated by: ${meta.updatedBy}`);
+    // Only when the push that stored it reported one — a bundle uploaded by hand in
+    // the Merchant Center has no revision, and printing "unknown" would be noise.
+    if (meta.sourceRevision) this.log(`  built from: ${meta.sourceRevision}`);
   }
 }

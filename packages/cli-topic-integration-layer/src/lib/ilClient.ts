@@ -22,6 +22,12 @@ export interface ExtensionMeta {
   version: number;
   updatedBy?: string;
   filename?: string;
+  /**
+   * The integrator's own version-control revision the stored bundle was built from,
+   * as reported on upload. Absent for a bundle uploaded without one (e.g. by hand in
+   * the Merchant Center).
+   */
+  sourceRevision?: string;
 }
 
 export interface BreakingChange {
@@ -81,13 +87,20 @@ export async function remoteValidate(
   return JSON.parse(text) as RemoteValidationResult;
 }
 
-/** Upload the built bundle, replacing the project's stored one (`PUT …/extension/bundle`). */
+/**
+ * Upload the built bundle, replacing the project's stored one (`PUT …/extension/bundle`).
+ *
+ * `sourceRevision` (optional) records which of the integrator's revisions this build
+ * came from; the integration layer stores it against the revision, shows it in the
+ * Merchant Center, and hands it to the connector.
+ */
 export async function pushBundle(
   baseUrl: string,
   projectKey: string,
   token: string,
   bundle: string,
   filename: string,
+  sourceRevision?: string,
 ): Promise<ExtensionMeta> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/bundle`;
   const res = await fetch(url, {
@@ -97,6 +110,12 @@ export async function pushBundle(
       // The route requires the original filename (percent-encoded; it carries the
       // module's type). The bundle is plain CommonJS, so name it `.cjs`.
       "x-extension-filename": encodeURIComponent(filename),
+      // Percent-encoded for the same reason as the filename: keep an arbitrary value
+      // header-safe. Omitted entirely when there's no revision to report — the route
+      // treats a missing header as "no revision", not an error.
+      ...(sourceRevision
+        ? { "x-extension-source-revision": encodeURIComponent(sourceRevision) }
+        : {}),
       ...bearer(token),
     },
     body: bundle,

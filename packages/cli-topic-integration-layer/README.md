@@ -24,6 +24,7 @@ commercetools integration-layer init <DIR>               # scaffold an extension
 commercetools integration-layer extension build          # bundle src/extension.ts -> dist [local]
 commercetools integration-layer extension validate        # local checks + remote compose/breaking gate
 commercetools integration-layer extension push [--force]   # build + validate + upload the bundle
+                       [--source-revision <rev> | --no-source-revision]   # provenance; default: detected from git
 commercetools integration-layer extension status          # show the project's stored bundle
 commercetools integration-layer extension delete [--yes]   # remove the extension subgraph
 
