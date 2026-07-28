@@ -96,6 +96,9 @@ importers:
       '@envelop/apollo-federation':
         specifier: ^8.1.1
         version: 8.1.1(@envelop/core@5.5.1)(graphql@16.14.2)
+      '@graphql-tools/merge':
+        specifier: ^9.2.2
+        version: 9.2.2(graphql@16.14.2)
       '@oclif/core':
         specifier: 4.2.10
         version: 4.2.10

@@ -1,5 +1,6 @@
 import { Command, Flags } from "@oclif/core";
-import { buildBundle, defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
+import { defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
+import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 
 export default class ExtensionBuild extends Command {
   static override description =
@@ -8,16 +9,36 @@ export default class ExtensionBuild extends Command {
   static override examples = [
     "<%= config.bin %> integration-layer extension build",
     "<%= config.bin %> integration-layer extension build --entry src/extension.ts --out dist/extension.js",
+    "<%= config.bin %> integration-layer extension build --all",
   ];
 
   static override flags = {
     entry: Flags.string({ description: "extension entry source file", default: defaultEntry() }),
     out: Flags.string({ description: "bundle output file", default: defaultOutfile() }),
+    all: Flags.boolean({
+      description:
+        "merge every extension under ./extensions/* into ONE combined bundle (the single artifact a project deploys)",
+      default: false,
+    }),
+    "extensions-dir": Flags.string({
+      description: "directory holding the extension packages (used with --all)",
+      default: "extensions",
+    }),
   };
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionBuild);
-    const { outfile } = await buildBundle(flags.entry, flags.out);
-    this.log(`✓ bundled ${flags.entry} → ${outfile}`);
+    let built;
+    try {
+      built = await bundleForFlags({
+        all: flags.all,
+        extensionsDir: flags["extensions-dir"],
+        entry: flags.entry,
+        out: flags.out,
+      });
+    } catch (err) {
+      this.error((err as Error).message);
+    }
+    this.log(`✓ bundled ${built.describe} → ${built.outfile}`);
   }
 }

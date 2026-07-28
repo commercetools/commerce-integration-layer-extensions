@@ -24,13 +24,11 @@ import { buildSubgraphSchema } from "@apollo/subgraph";
 import { context as esbuildContext, type BuildContext } from "esbuild";
 import { defaultEntry, defaultOutfile, HOST_PROVIDED_EXTERNALS } from "../../../lib/tooling/build.js";
 import { loadBundleSource, type EvaluatedBundle } from "../../../lib/tooling/loadBundle.js";
-import {
-  composeWithIntegrationLayer,
-  type ComposeResult,
-} from "../../../lib/tooling/compose.js";
+import { composeWithIntegrationLayer, type ComposeResult } from "../../../lib/tooling/compose.js";
+import { discoverExtensions, mergeExtensionSubgraph } from "../../../lib/tooling/extensions.js";
 import { makeGateway, mintAnonymousSession } from "../../../lib/tooling/gateway.js";
 import { fetchSubgraphSdl } from "../../../lib/ilClient.js";
-import { IntegrationLayerCommand } from "../../../lib/base.js";
+import { IntegrationLayerCommand, type IlFlagValues } from "../../../lib/base.js";
 
 /** The host-mediated capability context the runtime passes a resolver (3rd arg). */
 interface ExtensionContext {
@@ -110,10 +108,23 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       description: "make /graphql an executable federated gateway over both subgraphs",
       default: false,
     }),
+    all: Flags.boolean({
+      description:
+        "merge every extension under ./extensions/* into ONE subgraph (the single deployed bundle) and serve it behind a local federated gateway with the integration layer",
+      default: false,
+    }),
+    "extensions-dir": Flags.string({
+      description: "directory holding the extension packages (used with --all)",
+      default: "extensions",
+    }),
   };
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionServe);
+    if (flags.all) {
+      await this.runAll(flags);
+      return;
+    }
     const entry = defaultEntry();
     const outfile = defaultOutfile();
     const port = flags.port;
@@ -299,6 +310,217 @@ export default class ExtensionServe extends IntegrationLayerCommand {
   }
 
   /**
+   * `--all`: merge every extension under `./extensions/*` into ONE federation subgraph —
+   * the single bundle a project deploys — and serve it behind a local federated gateway
+   * with the deployed integration layer, exactly the two-subgraph shape the router plans
+   * over (core + the combined `extensions` subgraph). Like `--gateway` it reaches the
+   * integration layer (fetches its SDL, mints an anonymous session), so it needs a
+   * `commercetools auth login`. Watches every extension and hot-reloads: any edit
+   * re-merges the combined subgraph, and a schema change recomposes + rebuilds the gateway.
+   */
+  private async runAll(
+    flags: { port: number; "extensions-dir": string } & IlFlagValues,
+  ): Promise<void> {
+    const port = flags.port;
+    const root = process.cwd();
+    const extensions = await discoverExtensions(root, flags["extensions-dir"]);
+    if (extensions.length === 0) {
+      this.error(
+        `no extensions found under ./${flags["extensions-dir"]}/*/src/extension.ts — run --all from the monorepo root`,
+      );
+    }
+
+    // Reach the integration layer exactly like --gateway: its core-subgraph SDL is the
+    // compose baseline, and an anonymous session authenticates the gateway's calls.
+    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const integrationLayerGraphqlUrl = `${baseUrl}/${encodeURIComponent(projectKey)}/graphql`;
+    this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
+    const integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, token);
+    const integrationLayerBearer = await mintAnonymousSession(baseUrl, projectKey);
+    this.log("Minted an anonymous session for the gateway.");
+
+    // The single combined-extensions subgraph endpoint — the gateway's one data source
+    // besides the integration layer, named `extensions` just like the deployed bundle.
+    const extensionUrl = `http://localhost:${port}/_extension`;
+
+    // Per-extension loaded module (typeDefs + resolvers), merged into ONE subgraph on
+    // each rebuild. The yoga factories/gateway close over these so a reload applies with
+    // no restart.
+    const modules = new Map<string, { typeDefs: string; resolvers: object }>();
+    let combinedSchema: GraphQLSchema | undefined;
+    let composed: ComposeResult | undefined;
+    let gatewayYoga: ((req: IncomingMessage, res: ServerResponse) => void) | undefined;
+    let gatewaySupergraphSdl: string | undefined;
+    let apolloGateway: { stop(): Promise<void> } | undefined;
+
+    const log = (m: string): void => this.log(m);
+    const warn = (m: string): void => this.logToStderr(m);
+
+    // Merge all extensions into one subgraph, compose with the integration layer, and
+    // (re)build the gateway when the supergraph changes. No-op until every extension has
+    // produced its first build; a string-compare skips the gateway rebuild for a
+    // resolver-only edit (the /_extension hot-reload alone covers it).
+    const recompose = async (): Promise<void> => {
+      if (modules.size < extensions.length) return;
+      try {
+        const merged = mergeExtensionSubgraph(
+          [...modules].map(([name, m]) => ({ name, typeDefs: m.typeDefs, resolvers: m.resolvers })),
+        );
+        combinedSchema = merged.schema;
+        composed = composeWithIntegrationLayer(integrationLayerSdl, merged.sdl, {
+          integrationLayerUrl: integrationLayerGraphqlUrl,
+          extensionUrl,
+        });
+      } catch (err) {
+        warn(`✗ ${(err as Error).message}`);
+        return;
+      }
+      if (!composed.ok) {
+        warn("✗ extensions do not compose with the integration layer:");
+        for (const e of composed.errors) warn(`  - ${e}`);
+        return;
+      }
+      log(`✓ composes with the integration layer — full schema at http://localhost:${port}/composed`);
+      if (composed.supergraphSdl === gatewaySupergraphSdl) {
+        log("  (gateway plan unchanged — extension reloaded in place)");
+        return;
+      }
+      try {
+        const gw = await makeGateway({ supergraphSdl: composed.supergraphSdl, integrationLayerBearer });
+        const prev = apolloGateway;
+        apolloGateway = gw;
+        gatewaySupergraphSdl = composed.supergraphSdl;
+        gatewayYoga = createYoga({
+          plugins: [useApolloFederation({ gateway: gw })],
+          graphqlEndpoint: "/graphql",
+          landingPage: false,
+        });
+        log(`✓ gateway ready at http://localhost:${port}/graphql`);
+        if (prev) await prev.stop();
+      } catch (err) {
+        warn(`✗ gateway build failed: ${(err as Error).message}`);
+      }
+    };
+
+    // Watch + build each extension; awaiting sequentially means the last first-build
+    // triggers the initial merge/compose. `recompose` fires again on every later rebuild.
+    const contexts: BuildContext[] = [];
+    for (const ext of extensions) {
+      const ctx = await this.watchEntry(ext.entry, ext.outfile, async (mod) => {
+        const { typeDefs, resolvers } = mod;
+        if (typeof typeDefs !== "string" || typeDefs.trim() === "") {
+          warn(`✗ extension '${ext.name}' exported no \`typeDefs\` string`);
+          return;
+        }
+        if (resolvers === null || typeof resolvers !== "object") {
+          warn(`✗ extension '${ext.name}' exported no \`resolvers\` object`);
+          return;
+        }
+        modules.set(ext.name, { typeDefs, resolvers });
+        await recompose();
+      });
+      contexts.push(ctx);
+    }
+
+    if (!combinedSchema) {
+      for (const ctx of contexts) await ctx.dispose();
+      this.error("extensions did not merge into a subgraph (see errors above)");
+    }
+    if (composed && !composed.ok) {
+      warn(
+        "⚠ extensions do not compose with the integration layer yet — the gateway is " +
+          "unavailable until they do; fix the errors above and save to recompose.",
+      );
+    }
+
+    // The combined extensions subgraph (executable), at the internal /_extension the
+    // gateway reaches over HTTP. `schema: () => …` re-reads the latest merge, so a
+    // hot-reload applies with no restart.
+    const subgraphYoga = createYoga({
+      schema: () => combinedSchema!,
+      context: () => devContext(),
+      graphqlEndpoint: "/_extension",
+      landingPage: false,
+    });
+
+    // The browsable (not executable) merged API schema.
+    const composedYoga = createYoga({
+      schema: () => {
+        if (!composed?.ok) {
+          throw new Error(
+            `extensions do not compose with the integration layer:\n${(composed?.errors ?? []).join("\n")}`,
+          );
+        }
+        return composed.apiSchema;
+      },
+      graphqlEndpoint: "/composed",
+      landingPage: false,
+    });
+
+    const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+      const path = (req.url ?? "").split("?")[0];
+
+      if (req.method === "GET" && (path === "/schema.graphql" || path === "/supergraph.graphql")) {
+        if (!composed?.ok) {
+          res.statusCode = 503;
+          res.setHeader("content-type", "text/plain");
+          res.end(
+            `extensions do not compose with the integration layer:\n${(composed?.errors ?? []).join("\n")}\n`,
+          );
+          return;
+        }
+        res.setHeader("content-type", "text/plain; charset=utf-8");
+        res.end(path === "/schema.graphql" ? composed.apiSdl : composed.supergraphSdl);
+        return;
+      }
+
+      if (path.startsWith("/composed")) return void composedYoga(req, res);
+
+      if (path.startsWith("/graphql")) {
+        if (!gatewayYoga) {
+          const errs = composed && !composed.ok ? composed.errors : [];
+          res.statusCode = 503;
+          res.setHeader("content-type", "text/plain");
+          res.end(
+            `gateway not ready — extensions do not compose with the integration layer:\n${errs.join("\n")}\n`,
+          );
+          return;
+        }
+        return void gatewayYoga(req, res);
+      }
+
+      // /_extension — the combined extensions subgraph.
+      return void subgraphYoga(req, res);
+    });
+    await new Promise<void>((resolve) => server.listen(port, resolve));
+
+    const base = `http://localhost:${port}`;
+    const names = extensions.map((e) => e.name).join(", ");
+    const lines = [
+      `\n🔌 ${extensions.length} extension(s) merged into one subgraph (${names}), live behind a federated gateway:`,
+    ];
+    lines.push(
+      `   ${base}/graphql   — FEDERATED gateway (combined extensions + deployed integration layer)`,
+    );
+    lines.push(`   ${base}/_extension — the combined extensions subgraph (gateway routes to it)`);
+    lines.push(`   ${base}/composed  — full merged schema (browsable; not executable)`);
+    lines.push(`   ${base}/schema.graphql, ${base}/supergraph.graphql — SDL (text)`);
+    lines.push(`   open ${base}/graphql in a browser for GraphiQL`);
+    lines.push(`   watching ${extensions.length} extension(s) — edit and save to hot-reload\n`);
+    this.log(lines.join("\n"));
+
+    const shutdown = (): void => {
+      for (const ctx of contexts) void ctx.dispose();
+      server.close(() => process.exit(0));
+    };
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+
+    // Keep the process alive; the server + esbuild watchers run until a signal.
+    await new Promise<void>(() => {});
+  }
+
+  /**
    * Start esbuild in watch mode over the current example and feed `onBuild` a freshly
    * loaded subgraph on every (re)build. Resolves once the initial build has produced
    * one (so the caller can start serving); later rebuilds fire `onBuild` again.
@@ -308,10 +530,25 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     outfile: string,
     onBuild: (built: BuiltSubgraph) => void | Promise<void>,
   ): Promise<BuildContext> {
+    return this.watchEntry(entry, outfile, async (mod) => {
+      await onBuild(buildSubgraph(mod));
+    });
+  }
+
+  /**
+   * The generic watcher underneath {@link watchAndBuild}: esbuild-watch `entry`, and on
+   * every successful (re)build load the bundle and hand the raw module to `onReload`.
+   * `--all` uses this directly (it needs the module's resolvers to merge subgraphs);
+   * single-mode wraps it to build one subgraph.
+   */
+  private async watchEntry(
+    entry: string,
+    outfile: string,
+    onReload: (mod: EvaluatedBundle) => void | Promise<void>,
+  ): Promise<BuildContext> {
     const reload = async (): Promise<void> => {
       const source = await readFile(outfile, "utf8");
-      const mod = loadBundleSource(source);
-      await onBuild(buildSubgraph(mod));
+      await onReload(loadBundleSource(source));
     };
 
     let firstBuildDone!: () => void;

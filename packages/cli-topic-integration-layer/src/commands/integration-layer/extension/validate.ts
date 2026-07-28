@@ -1,5 +1,6 @@
 import { Flags } from "@oclif/core";
-import { buildBundle, defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
+import { defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
+import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 import { validateBundle, BundleValidationError } from "../../../lib/tooling/validateBundle.js";
 import { remoteValidate, type RemoteValidationResult } from "../../../lib/ilClient.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
@@ -11,11 +12,21 @@ export default class ExtensionValidate extends IntegrationLayerCommand {
   static override examples = [
     "<%= config.bin %> integration-layer extension validate",
     "<%= config.bin %> integration-layer extension validate --skip remote",
+    "<%= config.bin %> integration-layer extension validate --all",
   ];
 
   static override flags = {
     entry: Flags.string({ description: "extension entry source file", default: defaultEntry() }),
     out: Flags.string({ description: "bundle output file", default: defaultOutfile() }),
+    all: Flags.boolean({
+      description:
+        "validate every extension under ./extensions/* merged into ONE combined bundle (the single deployed artifact)",
+      default: false,
+    }),
+    "extensions-dir": Flags.string({
+      description: "directory holding the extension packages (used with --all)",
+      default: "extensions",
+    }),
     skip: Flags.string({
       description: "run only one half of the gate",
       options: ["local", "remote"],
@@ -48,7 +59,18 @@ export default class ExtensionValidate extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionValidate);
-    const { outfile, sourceFiles } = await buildBundle(flags.entry, flags.out);
+    let outfile: string;
+    let sourceFiles: string[];
+    try {
+      ({ outfile, sourceFiles } = await bundleForFlags({
+        all: flags.all,
+        extensionsDir: flags["extensions-dir"],
+        entry: flags.entry,
+        out: flags.out,
+      }));
+    } catch (err) {
+      this.error((err as Error).message);
+    }
 
     let typeDefs: string | null = null;
     if (flags.skip !== "local") {

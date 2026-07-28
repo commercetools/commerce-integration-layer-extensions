@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { Flags } from "@oclif/core";
-import { buildBundle, defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
+import { defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
+import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 import { validateBundle, BundleValidationError } from "../../../lib/tooling/validateBundle.js";
 import { pushBundle, remoteValidate, type RemoteValidationResult } from "../../../lib/ilClient.js";
 import { resolveSourceRevision } from "../../../lib/sourceRevision.js";
@@ -14,6 +15,7 @@ export default class ExtensionPush extends IntegrationLayerCommand {
   static override examples = [
     "<%= config.bin %> integration-layer extension push",
     "<%= config.bin %> integration-layer extension push --force",
+    "<%= config.bin %> integration-layer extension push --all",
     "<%= config.bin %> integration-layer extension push --source-revision r48211",
     "<%= config.bin %> integration-layer extension push --no-source-revision",
   ];
@@ -21,6 +23,15 @@ export default class ExtensionPush extends IntegrationLayerCommand {
   static override flags = {
     entry: Flags.string({ description: "extension entry source file", default: defaultEntry() }),
     out: Flags.string({ description: "bundle output file", default: defaultOutfile() }),
+    all: Flags.boolean({
+      description:
+        "merge every extension under ./extensions/* into ONE combined bundle and push that single artifact (the deployed shape)",
+      default: false,
+    }),
+    "extensions-dir": Flags.string({
+      description: "directory holding the extension packages (used with --all)",
+      default: "extensions",
+    }),
     force: Flags.boolean({
       char: "f",
       description: "upload despite a failing REMOTE validation (the local check always hard-fails)",
@@ -67,7 +78,18 @@ export default class ExtensionPush extends IntegrationLayerCommand {
 
     // Bundle, then VALIDATE before we touch the store. Local check first — it always
     // hard-fails, regardless of --force.
-    const { outfile, sourceFiles } = await buildBundle(flags.entry, flags.out);
+    let outfile: string;
+    let sourceFiles: string[];
+    try {
+      ({ outfile, sourceFiles } = await bundleForFlags({
+        all: flags.all,
+        extensionsDir: flags["extensions-dir"],
+        entry: flags.entry,
+        out: flags.out,
+      }));
+    } catch (err) {
+      this.error((err as Error).message);
+    }
     let typeDefs: string | null;
     try {
       const local = await validateBundle(outfile, sourceFiles);
