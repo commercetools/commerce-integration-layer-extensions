@@ -337,11 +337,12 @@ and make the field nullable so an outage degrades to `null` instead of taking do
 the whole product. (`examples/algolia-recommendations`.)
 
 ```graphql
-extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key"])
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@requires", "@external"])
 
 type Product @key(fields: "id") {
   id: ID!                                     # NON-@external: this resolver RETURNS Product stubs, so it must provide the key
-  recommendations: [ProductRecommendation!]   # nullable list, safe to degrade
+  _ctId: ID! @external                        # raw CT id (integration-layer-owned, @inaccessible) — Algolia's index is keyed by it, not the opaque `id`
+  recommendations: [ProductRecommendation!] @requires(fields: "_ctId")   # nullable list, safe to degrade
 }
 type ProductRecommendation { product: Product!  reason: String! }
 ```
@@ -357,12 +358,14 @@ export const resolvers = {
       try {
         const client = algoliasearch(ALGOLIA_APP_ID, ALGOLIA_API_KEY);
         const res = await client.initRecommend().getRecommendations({
-          requests: [{ indexName: ALGOLIA_INDEX_NAME, model: "related-products", objectID: product.id, maxRecommendations: 5 }],
+          // objectID is the RAW CT id — key off `_ctId`, never the opaque `product.id`.
+          requests: [{ indexName: ALGOLIA_INDEX_NAME, model: "related-products", objectID: product._ctId, maxRecommendations: 5 }],
         });
         return (res.results?.[0]?.hits ?? [])
           .map((h) => ("objectID" in h ? h.objectID : undefined))
           .filter((id) => typeof id === "string")
-          // Return product STUBS; the router resolves the rich data (see below).
+          // Return product STUBS keyed by the raw CT id (each objectID); the core
+          // resolves it leniently and fills in the rich data (see below).
           .map((id) => ({ product: { id }, reason: "related product" }));
       } catch {
         return null;   // Algolia unavailable, degrade
@@ -376,6 +379,16 @@ The resolver returns `{ product: { id } }`, a stub. Whenever a field's type is a
 entity, return only the `id` and let the router fill in the rest from the
 integration layer (the join target), so callers get back the same rich shape. More
 on this under [returning entities](#returning-entities-stubs).
+
+> **`Product.id` is an opaque Relay global id — never the raw CT id.** Treat it as
+> an opaque handle: don't parse it, compare it to a raw CT UUID, or key an external
+> system by it. When you genuinely need the native id (an Algolia `objectID`, a
+> recommender key, …), pull in `_ctId` — the raw CT id, integration-layer-owned and
+> `@inaccessible` (never exposed to shoppers) — via `_ctId: ID! @external` +
+> `@requires(fields: "_ctId")`, exactly as above. On the way back, a stub may carry
+> a raw CT id as its `id`: the core `_entities` resolver decodes gids leniently (a
+> non-gid passes through) and re-encodes the opaque id outbound. Never try to build
+> the opaque id yourself — the encoding is internal to the integration layer.
 
 ### Taking over an existing field (`@override`)
 
@@ -837,11 +850,11 @@ sequenceDiagram
     Note over R: Per-project planner. recommendations<br/>is owned by the extension subgraph.
 
     R->>T: resolve the product (owned by the integration layer)
-    T-->>R: Product fields + { id } for the recommendations join
-    R->>X: Product.recommendations  (subgraph fetch, parent { id })
-    X->>AL: algoliasearch Recommend SDK (over global fetch)
-    AL-->>X: recommended hits with objectID
-    X-->>R: [{ product: { id }, reason }]  (bare Product stubs)
+    T-->>R: Product fields + _ctId (raw CT id, @requires) for the recommendations join
+    R->>X: Product.recommendations  (subgraph fetch, parent { id, _ctId })
+    X->>AL: algoliasearch Recommend SDK, objectID = _ctId (over global fetch)
+    AL-->>X: recommended hits with objectID (raw CT ids)
+    X-->>R: [{ product: { id }, reason }]  (bare stubs, id = raw CT id)
 
     Note over R: recommendation products are bare stubs.<br/>Their other fields are owned by the<br/>integration layer, so plan an entities fetch.
 
