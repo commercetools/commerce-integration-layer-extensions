@@ -5,8 +5,27 @@ import { defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
 import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 import { validateBundle, BundleValidationError } from "../../../lib/tooling/validateBundle.js";
 import { pushBundle, remoteValidate, type RemoteValidationResult } from "../../../lib/ilClient.js";
+import { awaitBundleState, type BundleOutcome } from "../../../lib/awaitBundleState.js";
 import { resolveSourceRevision } from "../../../lib/sourceRevision.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
+
+// How often to re-read the bundle's status while waiting. The extension re-reads its
+// bundle on its own ~30s poll, so a tighter interval just adds requests without
+// learning anything sooner; 5s keeps the command feeling responsive when the
+// extension happens to be mid-poll already.
+const POLL_INTERVAL_MS = 5000;
+
+/**
+ * Name a build the way its author recognises it: the integration layer's version
+ * number AND the source revision it was built from. The number is an internal
+ * counter — the commit is the identity. Falls back to the bare version when the
+ * push recorded no revision.
+ */
+function describeBuild(version: number, sourceRevision?: string): string {
+  return sourceRevision
+    ? `version ${version} (source revision ${sourceRevision})`
+    : `version ${version}`;
+}
 
 export default class ExtensionPush extends IntegrationLayerCommand {
   static override description =
@@ -51,7 +70,63 @@ export default class ExtensionPush extends IntegrationLayerCommand {
       description: "push without recording any source revision",
       default: false,
     }),
+    // A push only STORES the bundle; the extension loads it on its own poll and
+    // reports back. Waiting for that verdict is the default because a push that
+    // reports success while the bundle can't actually run is the thing worth
+    // catching — especially in CI, where this is the difference between a green
+    // pipeline and a green pipeline that shipped a broken extension.
+    wait: Flags.boolean({
+      description:
+        "wait for the extension to load the pushed version and report back (use --no-wait to return as soon as it is stored)",
+      default: true,
+      allowNo: true,
+    }),
+    "wait-timeout": Flags.integer({
+      description:
+        "seconds to wait for the pushed version to be confirmed before giving up (the push still stands)",
+      default: 180,
+    }),
   };
+
+  /**
+   * Report how the pushed version fared and say whether the command should fail.
+   *
+   * Only a genuine `failed` verdict is an error. Not being ABLE to find out — an
+   * older integration layer, an extension that isn't deployed, a metadata read that
+   * errored — is reported honestly and left as a success, because the push itself
+   * did land and failing it would break workflows that never had this signal.
+   */
+  private reportOutcome(outcome: BundleOutcome, version: number): boolean {
+    switch (outcome.kind) {
+      case "running":
+        this.log(
+          `✓ ${describeBuild(version, outcome.meta.sourceRevision)} is running — the extension loaded it and published its schema`,
+        );
+        return false;
+      case "failed": {
+        this.logToStderr(
+          `✗ ${describeBuild(version, outcome.meta.sourceRevision)} could not be loaded and is NOT in use.`,
+        );
+        if (outcome.meta.reason) this.logToStderr(`  reason: ${outcome.meta.reason}`);
+        const served = outcome.meta.served;
+        this.logToStderr(
+          served == null
+            ? "  no stored version could be loaded, so this project currently has no extension running."
+            : `  ${describeBuild(served.version, served.sourceRevision)} is still in use; fix the bundle and push again.`,
+        );
+        return true;
+      }
+      case "superseded":
+        this.log(
+          `⚠ another push replaced version ${version} with ${describeBuild(outcome.meta.version, outcome.meta.sourceRevision)} while waiting; not reporting on it`,
+        );
+        return false;
+      case "unknown":
+        this.log(`⚠ could not confirm version ${version}: ${outcome.reason}`);
+        this.log("  the bundle is stored; check the extension panel in the Merchant Center.");
+        return false;
+    }
+  }
 
   /** True when the remote result should abort the push. */
   private reportRemote(result: RemoteValidationResult): boolean {
@@ -146,6 +221,22 @@ export default class ExtensionPush extends IntegrationLayerCommand {
     this.log(`✓ stored revision ${meta.version} (${meta.length} bytes, filename ${meta.filename ?? filename})`);
     if (meta.sourceRevision) {
       this.log(`  built from ${meta.sourceRevision}`);
+    }
+
+    if (!flags.wait) {
+      return;
+    }
+
+    // Storing it isn't running it. Wait for the extension to actually load this
+    // version and say so, and fail the command if it couldn't — otherwise a bundle
+    // the sandbox refuses to run exits 0 and looks like a successful push.
+    this.log(`Waiting for the extension to load version ${meta.version}…`);
+    const outcome = await awaitBundleState(baseUrl, projectKey, token, meta.version, {
+      timeoutMs: flags["wait-timeout"] * 1000,
+      intervalMs: POLL_INTERVAL_MS,
+    });
+    if (this.reportOutcome(outcome, meta.version)) {
+      this.error("The pushed bundle could not be loaded.");
     }
   }
 }

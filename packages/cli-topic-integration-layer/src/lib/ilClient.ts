@@ -14,6 +14,17 @@ export interface ConfigEntry {
   secret: boolean;
 }
 
+/**
+ * Lifecycle state of a stored bundle version.
+ *
+ *  pending — stored and being handed out, but nothing has confirmed it loads.
+ *  running — an extension loaded it and published its schema. Once a version
+ *            reaches this it is never demoted.
+ *  failed  — it could not be loaded (`reason` says why). The integration layer
+ *            stops handing it out and the version beneath it takes over.
+ */
+export type ExtensionState = "pending" | "running" | "failed";
+
 /** The stored bundle's metadata (integration layer `ExtensionMeta`). */
 export interface ExtensionMeta {
   projectKey: string;
@@ -28,6 +39,28 @@ export interface ExtensionMeta {
    * the Merchant Center).
    */
   sourceRevision?: string;
+  /**
+   * Lifecycle state of THIS version. Absent when talking to an integration layer
+   * that predates bundle state — callers must treat `undefined` as "this deployment
+   * can't tell me", not as a failure.
+   */
+  state?: ExtensionState;
+  /** Why this version failed to load; only ever set alongside state "failed". */
+  reason?: string;
+  /**
+   * The version actually in use, which is NOT always `version`: when the newest
+   * upload failed to load, the integration layer serves the one beneath it and this
+   * reports that older one. `null` when nothing is in use. Returned by the meta read
+   * only, not by an upload's response.
+   *
+   * It carries the source revision as well as the number, because the number is the
+   * integration layer's own counter — the commit is what identifies the build to
+   * whoever pushed it.
+   */
+  served?: {
+    version: number;
+    sourceRevision?: string;
+  } | null;
 }
 
 export interface BreakingChange {
