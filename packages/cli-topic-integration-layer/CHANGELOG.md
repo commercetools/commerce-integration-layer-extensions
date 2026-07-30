@@ -1,5 +1,11 @@
 # @commercetools/cli-topic-integration-layer
 
+## 0.4.0
+
+### Minor Changes
+
+- ac39dfb: `commercetools integration-layer --version` (`-v`) now prints the installed plugin version; running the topic with no flag still shows its help.
+
 ## 0.3.1
 
 ### Patch Changes
