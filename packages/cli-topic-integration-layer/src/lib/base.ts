@@ -1,21 +1,81 @@
 // Base class for the topic's commands that reach the integration layer's
-// `manage_project` boundary. It extends the host CLI's `AuthCommand`
-// (`@commercetools/cli-plugin-auth`), so the bearer is the token
-// `commercetools auth login` already persisted to `~/.commercetools/credentials`
-// (loaded into the security context by the auth plugin's prerun hook) — no separate
-// credential handling, exactly as the `connect` topic does.
+// `manage_project` boundary. The bearer is the token `commercetools auth login`
+// already persisted to `~/.commercetools/credentials`; we read it back from disk
+// here rather than from the auth plugin's in-memory security context — see below.
 //
-// `@commercetools/cli-plugin-auth` is a PEER dependency: at runtime the plugin uses
-// the HOST CLI's copy, so the static auth manager/repository the host wires up are
-// the same singletons this class reads (a bundled second copy would see an empty
-// security context and reject every logged-in caller).
+// `@commercetools/cli-plugin-auth` holds the security context in a MODULE-LEVEL
+// STATIC (`SecurityContextHolder.globalContext`), so there is one context per loaded
+// copy of that module. When this topic is bundled into the host CLI it resolves up
+// into the host's single copy and the static the host fills is the one we read. But
+// when the topic is installed via `oclif plugins install`, it lands in the oclif data
+// dir's own node_modules tree, npm auto-installs the declared `cli-plugin-auth` there,
+// and Node loads that as a SECOND, distinct module instance. `auth login`'s prerun
+// hook (running in the host) fills the HOST copy's static; a read via the inherited
+// `getAuthentication()` would hit the DATA-DIR copy's empty static and reject every
+// logged-in caller ("not logged in"). This is not hypothetical — it is the exact
+// failure mode that a CI symlink-dedupe workaround previously papered over.
+//
+// The cure is to stop depending on cross-copy static identity. `auth login` serializes
+// the full principal (token, region, project key, scope, expiry) to
+// `~/.commercetools/credentials` via the host CLI's `FileBasedAuthenticationRepository`.
+// We reconstruct it from that same file, from THIS module's own copy of the repository
+// — no network, no auth manager, no shared static — so it no longer matters whether one
+// or two copies of `cli-plugin-auth` are loaded. Accordingly `cli-plugin-auth` is a
+// regular `dependency`, not a peer: a second copy is now harmless. The path, auth id
+// (`"client-credentials"`), and serialized shape mirror the host CLI's
+// `providers.ts`/`init.ts` wiring exactly.
+
+import os from "node:os";
+import path from "node:path";
 
 import { Flags } from "@oclif/core";
 import {
   AuthCommand,
   AuthorizationError,
   CtpAuthorizedClient,
+  CtpClientAuthenticationToken,
+  FileBasedAuthenticationRepository,
 } from "@commercetools/cli-plugin-auth";
+
+/**
+ * Where `commercetools auth login` persists the serialized principal, and the auth id
+ * it files the client-credentials token under. These mirror the host CLI's
+ * `providers.ts` (`@commercetools/cli`) — the on-disk credentials contract — verbatim.
+ */
+const CREDENTIALS_FILE = path.join(os.homedir(), ".commercetools", "credentials");
+const CLIENT_CREDENTIALS_AUTH_ID = "client-credentials";
+
+/**
+ * A `FileBasedAuthenticationRepository` over the shared credentials file, wired to
+ * deserialize the client-credentials principal. Constructed from THIS module's copy of
+ * `cli-plugin-auth`, so `loadAuthentication()` reconstructs the principal regardless of
+ * how many copies of the auth plugin are loaded (see the header note).
+ */
+function persistedAuthenticationRepository(
+  credentialsFile: string,
+): FileBasedAuthenticationRepository {
+  const repository = new FileBasedAuthenticationRepository(credentialsFile);
+  repository.addSerializable(
+    CLIENT_CREDENTIALS_AUTH_ID,
+    CtpClientAuthenticationToken,
+    CtpClientAuthenticationToken.Serializable,
+  );
+  return repository;
+}
+
+/**
+ * Reconstruct the logged-in principal from the persisted credentials file. Returns
+ * undefined when no valid client-credentials login is on disk (absent file, or a
+ * different auth kind), so unauthorized commands still run. No network. Exported for
+ * tests; commands go through {@link IntegrationLayerCommand.requirePrincipal}.
+ */
+export async function loadPersistedPrincipal(
+  credentialsFile: string = CREDENTIALS_FILE,
+): Promise<CtpAuthorizedClient | undefined> {
+  const authentication = await persistedAuthenticationRepository(credentialsFile).loadAuthentication();
+  const principal = authentication?.getPrincipal();
+  return principal instanceof CtpAuthorizedClient ? principal : undefined;
+}
 
 /** The resolved, ready-to-use integration-layer context: where to call and as whom. */
 export interface IlContext {
@@ -85,6 +145,13 @@ export abstract class IntegrationLayerCommand extends AuthCommand {
    */
   protected authorized = true;
 
+  /**
+   * The principal loaded from `~/.commercetools/credentials` in {@link init}, or
+   * undefined when no valid login is persisted. Resolved once per command run so the
+   * synchronous {@link requirePrincipal} call sites (here and in `explore`) are unchanged.
+   */
+  private persistedPrincipal?: CtpAuthorizedClient;
+
   static override baseFlags = {
     "integration-layer-url": Flags.string({
       description:
@@ -100,13 +167,23 @@ export abstract class IntegrationLayerCommand extends AuthCommand {
 
   protected override async init(): Promise<void> {
     await super.init();
+    this.persistedPrincipal = await this.loadPersistedPrincipal();
     if (this.authorized) this.requirePrincipal();
+  }
+
+  /**
+   * Read the persisted login from `~/.commercetools/credentials`. Returns undefined when
+   * no login is on disk (so unauthorized commands like standalone `serve` still run) and
+   * only fails loudly when the file is present but malformed. No network — the token was
+   * already minted by `auth login` and serialized whole.
+   */
+  private async loadPersistedPrincipal(): Promise<CtpAuthorizedClient | undefined> {
+    return loadPersistedPrincipal();
   }
 
   /** The logged-in commercetools principal, or an `AuthorizationError` pointing at `auth login`. */
   protected requirePrincipal(): CtpAuthorizedClient {
-    const principal = this.getAuthentication()?.getPrincipal();
-    if (principal instanceof CtpAuthorizedClient) return principal;
+    if (this.persistedPrincipal) return this.persistedPrincipal;
     throw new AuthorizationError("not logged in — run `commercetools auth login` first");
   }
 

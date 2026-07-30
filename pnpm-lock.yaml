@@ -126,6 +126,9 @@ importers:
       '@apollo/subgraph':
         specifier: ^2.14.1
         version: 2.14.2(graphql@16.14.2)
+      '@commercetools/cli-plugin-auth':
+        specifier: '>=0.0.6'
+        version: 0.0.6
       '@envelop/apollo-federation':
         specifier: ^8.1.1
         version: 8.1.1(@envelop/core@5.5.1)(graphql@16.14.2)
@@ -148,9 +151,6 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
     devDependencies:
-      '@commercetools/cli-plugin-auth':
-        specifier: 0.0.6
-        version: 0.0.6
       '@commercetools/platform-sdk':
         specifier: 8.25.0
         version: 8.25.0

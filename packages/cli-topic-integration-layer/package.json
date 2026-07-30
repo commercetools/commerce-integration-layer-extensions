@@ -21,6 +21,7 @@
     "test": "vitest run --disable-console-intercept"
   },
   "dependencies": {
+    "@commercetools/cli-plugin-auth": ">=0.0.6",
     "@apollo/composition": "^2.14.1",
     "@apollo/gateway": "^2.14.1",
     "@apollo/subgraph": "^2.14.1",
@@ -32,11 +33,7 @@
     "graphql-yoga": "^5.21.2",
     "typescript": "^5.7.2"
   },
-  "peerDependencies": {
-    "@commercetools/cli-plugin-auth": ">=0.0.6"
-  },
   "devDependencies": {
-    "@commercetools/cli-plugin-auth": "0.0.6",
     "@commercetools/platform-sdk": "8.25.0",
     "@oclif/test": "^4.1.12",
     "@types/node": "^22.10.2",
