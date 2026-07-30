@@ -814,7 +814,47 @@ Use `--no-source-revision` to push without recording one. Nothing is recorded wh
 there's nothing to detect either — a value is never invented, since a made-up
 revision in the Merchant Center and in every log line is worse than none.
 
+## Explore your project's graph (`explore`)
+
+```bash
+commercetools integration-layer explore
+```
+
+Starts a local GraphQL explorer in your browser. One command: it resolves your
+project's schema, mints a session from your existing `commercetools auth login`,
+serves GraphiQL on `http://localhost:4000`, and proxies every operation to your
+project's **deployed** edge. No tokens to paste, no headers to hand-edit.
+
+| Flag | What it does |
+| --- | --- |
+| `--deployed` | Render the project's **deployed composed schema** (read from Hive — core subgraph + whichever extension is actually deployed) instead of composing locally |
+| `--as <email>` | Run operations as that customer, via an ordinary email/password login (prompts for the password, or set `IL_CUSTOMER_PASSWORD`). Omit to run anonymously |
+| `-p, --port` | Port to serve on (default `4000`) |
+| `--graphql-url` / `--auth-url` | Override the GraphQL and identity edges (`IL_GRAPHQL_URL` / `IL_AUTH_URL`); needed for staging zones, which don't follow the production host convention |
+
+**Two schema sources.** By default the explorer composes locally: your project's
+core-subgraph SDL plus, when you run it from an extension directory, that
+extension — built from the working tree. So your fields show up before you have
+pushed anything. `--deployed` instead reads what the router actually serves, which
+is what you want when you're debugging the real edge rather than your own draft.
+
+**How auth works, and what it deliberately doesn't do.** Operations run as an
+anonymous shopper, or as a real customer who logs in with their own credentials.
+There is no impersonation flag and no privileged debug identity — to see what a
+customer sees, you log in as them. (The Merchant Center console used to have an
+operator "Run as" bar that executed under the project's service-account
+credentials; that is exactly what this does not reimplement.)
+
+**Why introspection is answered locally.** The deployed edge runs with
+introspection disabled — a project's schema is not public. The explorer therefore
+reads the schema over an authenticated API (`GET /<project>/schema/api`, or
+`/subgraph` for the local composition) and answers GraphiQL's introspection itself,
+so you get full docs and autocomplete against an edge that gives no schema away.
+Only real operations are forwarded, and the session bearer is attached by the CLI
+on the way out — it is never exposed to the browser page.
+
 ### All commands
+
 
 Repo-wide (from the repo root):
 

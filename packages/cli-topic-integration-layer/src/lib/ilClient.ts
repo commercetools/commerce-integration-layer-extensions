@@ -100,6 +100,41 @@ export async function fetchSubgraphSdl(
   return text;
 }
 
+/**
+ * GET the project's DEPLOYED composed graph as a PUBLIC API SCHEMA — what the router
+ * actually plans and serves (core subgraph + the project's published extension),
+ * read from Hive by the integration layer and reduced there (`GET …/schema/api`).
+ *
+ * The integration layer strips the federation machinery before sending, so this is
+ * `buildSchema`-able as-is; there is no supergraph to reduce client-side. It is the
+ * byte-identical response the Merchant Center console's explorer reads under its
+ * own operator JWT — one artifact, two guards.
+ *
+ * This is the authenticated replacement for introspecting the public edge: the
+ * router runs `introspection: false`, so the composed graph is read here, over the
+ * same `manage_project` boundary as `/subgraph`. 404 means the project has never
+ * published a composable version.
+ */
+export async function fetchDeployedApiSchemaSdl(
+  baseUrl: string,
+  projectKey: string,
+  token: string,
+): Promise<string> {
+  const url = `${apiRoot(baseUrl, projectKey)}/schema/api`;
+  const res = await fetch(url, { headers: { accept: "text/plain", ...bearer(token) } });
+  const text = await res.text();
+  if (res.status === 404) {
+    throw new Error(
+      `project '${projectKey}' has no composed schema published yet — publish one from the ` +
+        `Merchant Center console (Schema → Refresh schema), or drop --deployed to compose locally`,
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`could not fetch the deployed composed schema (${res.status}) from ${url}: ${text}`);
+  }
+  return text;
+}
+
 /** POST a candidate SDL to the composition + breaking-change gate (`POST …/extension/validate`). */
 export async function remoteValidate(
   baseUrl: string,

@@ -51,6 +51,31 @@ export function edgeUrlForRegion(region: string): string | undefined {
   return `https://extensions.integration-layer.${trimmed}.commercetools.com`;
 }
 
+/**
+ * The GRAPHQL edge (the integration-router) for a region — where operations are
+ * actually served, at `/{project}/graphql`. A distinct host from the extensions
+ * edge above: the extensions edge is the connector backend (manage_project routes),
+ * the graphql edge is the router. `--graphql-url` / `IL_GRAPHQL_URL` overrides it
+ * for staging zones, which don't follow the production convention.
+ */
+export function graphqlEdgeUrlForRegion(region: string): string | undefined {
+  const trimmed = region.trim();
+  if (!trimmed) return undefined;
+  return `https://graphql.integration-layer.${trimmed}.commercetools.com`;
+}
+
+/**
+ * The IDENTITY edge (the storefront pod) for a region — where sessions are minted,
+ * at `POST /{project}/session`. Again a distinct host from both of the above; the
+ * four-pod split put shopper identity, shopper GraphQL, and the machine surface on
+ * separate ingresses. `--auth-url` / `IL_AUTH_URL` overrides it.
+ */
+export function authEdgeUrlForRegion(region: string): string | undefined {
+  const trimmed = region.trim();
+  if (!trimmed) return undefined;
+  return `https://auth.integration-layer.${trimmed}.commercetools.com`;
+}
+
 export abstract class IntegrationLayerCommand extends AuthCommand {
   /**
    * Whether the command needs a logged-in principal. True for every command that
