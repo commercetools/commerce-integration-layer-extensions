@@ -31,6 +31,7 @@ and the build → validate → push flow lives in the **commercetools CLI**: the
 - [Layout](#layout)
 - [The pipeline](#the-pipeline)
 - [Flow diagram](#flow-a-storefront-reading-algolia-recommendations)
+- [Release](#release)
 
 ## How it fits together
 
@@ -101,9 +102,9 @@ install …` step. Logging in with `commercetools auth login` gives you a
 `commercetools integration-layer extension serve|validate|push`.
 
 > The plugin is published to the public npm registry, so `commercetools plugins
-> install` needs no auth or scope mapping. In CI it is published on a version tag
-> via npm Trusted Publishing (OIDC) — no stored token; see
-> `.github/workflows/publish-release.yml`.
+> install` needs no auth or scope mapping. Releases are cut with Changesets (version +
+> CHANGELOG) and published on a version tag via npm Trusted Publishing (OIDC) — no
+> stored npm token. See [Release](#release).
 
 ## Example templates
 
@@ -988,3 +989,37 @@ The trust boundary stays in the integration layer. The `_entities` re-entry runs
 through the same session-scoped loader as a direct `products(ids:)` read, and the
 integration layer re-checks the URL's project against the session bearer. The
 router's routing is a hint, not the boundary.
+
+## Release
+
+Only `@commercetools/cli-topic-integration-layer` (under `packages/`) is published; the
+`examples/*` are `private` and never released. Versioning + changelog are driven by
+[Changesets](https://github.com/changesets/changesets); publishing is a separate
+tag-triggered step.
+
+The flow, in order:
+
+1. **In your PR**, add a changeset describing the change:
+
+```bash
+pnpm changeset
+```
+
+   Choose the bump (`patch` / `minor` / `major`) and write a one-line summary — it
+   becomes the CHANGELOG entry. Commit the generated `.changeset/<name>.md`. A PR that
+   doesn't change the plugin (docs, an example-only edit) needs none.
+
+2. **On merge to `main`**, `.github/workflows/release.yml` collects pending changesets
+   and opens/updates a **"Version Packages"** PR that bumps `package.json` and writes the
+   CHANGELOG. Nothing is published yet.
+
+3. **Merging the Version Packages PR** pushes a `v<version>` tag, which triggers
+   `.github/workflows/publish-release.yml` to publish to the public npm registry via npm
+   Trusted Publishing (OIDC) — no stored token.
+
+`package.json` + the tag remain the single publish gate; Changesets just produces both.
+The tag hand-off in step 3 needs a trigger-capable token (a `GITHUB_TOKEN`-pushed tag
+can't start another workflow) — set the `RELEASE_TAG_PUSH_TOKEN` secret (a fine-grained
+PAT with `contents:write`, or the CT Changesets App token). Without it the Version PR and
+tag are still produced, but a maintainer re-pushes the tag once to publish. See the
+header of `.github/workflows/release.yml` for details.

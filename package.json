@@ -12,6 +12,8 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "pnpm -r test",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
     "dev:server-time": "pnpm --filter @example-extensions/server-time dev",
     "dev:loyalty-points": "pnpm --filter @example-extensions/loyalty-points dev",
     "dev:price-discount": "pnpm --filter @example-extensions/price-discount dev",
@@ -41,6 +43,7 @@
     "push:cart-quantity-cap": "pnpm --filter @example-extensions/cart-quantity-cap push"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.29.7",
     "eslint": "^9.39.4",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.62.1"
