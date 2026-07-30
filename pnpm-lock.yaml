@@ -34,11 +34,41 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  examples/business-unit-cost-centres:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.21
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  examples/cart-quantity-cap:
+    devDependencies:
+      '@commercetools/platform-sdk':
+        specifier: 8.25.0
+        version: 8.25.0
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.21
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   examples/cart-sku-blocker:
     devDependencies:
       '@commercetools/platform-sdk':
         specifier: 8.25.0
         version: 8.25.0
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.21
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
+  examples/category-counts-override:
+    devDependencies:
       '@types/node':
         specifier: ^22.10.2
         version: 22.19.21

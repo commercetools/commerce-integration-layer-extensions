@@ -10,7 +10,11 @@ import type {
 } from "../../../lib/tooling/apiExtension.js";
 
 /** A sample commercetools cart callback payload. */
-function sampleCartInput(action: ApiExtensionAction, sku: string): ApiExtensionInput {
+function sampleCartInput(
+  action: ApiExtensionAction,
+  sku: string,
+  quantity: number,
+): ApiExtensionInput {
   // A minimal sample callback for local testing. The real payload is the SDK's
   // ExtensionInput (resource: a full Cart Reference); we send just the fields a
   // cart handler reads, cast to the SDK type.
@@ -21,7 +25,7 @@ function sampleCartInput(action: ApiExtensionAction, sku: string): ApiExtensionI
       id: "sample-cart",
       obj: {
         id: "sample-cart",
-        lineItems: [{ id: "sample-line-item", quantity: 1, variant: { sku } }],
+        lineItems: [{ id: "sample-line-item", quantity, variant: { sku } }],
       },
     },
   } as unknown as ApiExtensionInput;
@@ -46,6 +50,7 @@ export default class ExtensionInvoke extends Command {
   static override examples = [
     "<%= config.bin %> integration-layer extension invoke",
     "<%= config.bin %> integration-layer extension invoke --action Update --sku BLOCKED-SKU",
+    "<%= config.bin %> integration-layer extension invoke --quantity 25 --config MAX_LINE_QUANTITY=10",
     "<%= config.bin %> integration-layer extension invoke --config MAX_QTY=5 --config REGION=eu",
   ];
 
@@ -60,6 +65,10 @@ export default class ExtensionInvoke extends Command {
     sku: Flags.string({
       description: "SKU on the sample cart's line item",
       default: "BLOCKED-SKU",
+    }),
+    quantity: Flags.integer({
+      description: "quantity on the sample cart's line item",
+      default: 1,
     }),
     config: Flags.string({
       description: "a ctx.config entry as KEY=VALUE (repeatable)",
@@ -87,11 +96,11 @@ export default class ExtensionInvoke extends Command {
     }
 
     const action = flags.action as ApiExtensionAction;
-    const input = sampleCartInput(action, flags.sku);
+    const input = sampleCartInput(action, flags.sku, flags.quantity);
     const ctx = { now: () => Date.now(), config };
     this.log(
       `Invoking ${handlers.length} handler(s) with a ${input.action} on cart ` +
-        `(line item SKU '${flags.sku}')`,
+        `(line item SKU '${flags.sku}' x${flags.quantity})`,
     );
 
     for (const h of handlers) {

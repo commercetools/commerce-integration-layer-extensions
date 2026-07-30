@@ -30,7 +30,7 @@ and the build → validate → push flow lives in the **commercetools CLI**: the
 - [Config (`.env`)](#config-env)
 - [Layout](#layout)
 - [The pipeline](#the-pipeline)
-- [Flow diagram](#flow-a-storefront-product-search-through-the-algolia-override)
+- [Flow diagram](#flow-a-storefront-reading-algolia-recommendations)
 
 ## How it fits together
 
@@ -114,11 +114,11 @@ identical from any of their directories.
 There are **two kinds** of extension, and a bundle may export either or both:
 
 - **GraphQL schema extensions** (`typeDefs` + `resolvers`) — ADD FIELDS to the
-  graph. The five below.
+  graph. Seven of the templates below.
 - **commercetools API Extensions** (`apiExtensions`) — a synchronous callback that
   VALIDATES or MODIFIES a cart/order/… write *before commercetools saves it* (it
-  can even block it). See **cart-sku-blocker** and [API Extensions](#api-extensions)
-  below. These change API *behaviour*, not the schema.
+  can even block it). See **cart-sku-blocker** / **cart-quantity-cap** and
+  [API Extensions](#api-extensions) below. These change API *behaviour*, not the schema.
 
 | Template | Kind | Pattern | Start here when you want to |
 | --- | --- | --- | --- |
@@ -127,7 +127,10 @@ There are **two kinds** of extension, and a bundle may export either or both:
 | **price-discount** | schema | Field from a value the integration layer owns via `@requires` (`Product.discountedPrice`) | compute from a field the integration layer owns (a nested value) |
 | **customer-display-name** | schema | `@requires` over scalar fields (`Customer.displayName`) | compute from plain scalar fields the integration layer owns |
 | **algolia-recommendations** | schema | External service returning entity stubs (`Product.recommendations`) | call out to a vendor API and return products the integration layer resolves |
-| **cart-sku-blocker** | API Extension + GraphQL | Block SKUs from carts (`cart` Create/Update) *and* expose a `blockedSkus` query, from one shared config | validate or modify a cart/order/… write before it is saved — and see one bundle do both |
+| **business-unit-cost-centres** | schema | Attaching by the READABLE key, on a non-`Product` entity (`BusinessUnit.costCentres`, `@key(fields: "key")`) | extend an entity your own data keys by its human handle, not by an opaque id |
+| **category-counts-override** | schema | Taking over an existing field with `@override` (`Query.categoryProductCounts`) | replace a field the integration layer already serves with your own data |
+| **cart-sku-blocker** | API Extension + GraphQL | BLOCK SKUs from carts (`cart` Create/Update) *and* expose a `blockedSkus` query, from one shared config | validate a cart/order/… write before it is saved — and see one bundle do both |
+| **cart-quantity-cap** | API Extension | MODIFY the write (`{ actions: [...] }`), API-extensions-only, with a `condition` | correct a write in flight instead of rejecting it, with no schema of your own |
 
 > Each project holds one bundle, so a second push replaces the first. The templates
 > are not meant to run side by side, so push one per project. To ship several
@@ -189,6 +192,27 @@ The **cart-sku-blocker** example goes further: the same bundle ALSO exports a
 one shared `ctx.config.BLOCKED_SKU` list — so one bundle contributes both an
 API-Extension callback and a GraphQL field from a single config.
 
+### Modifying a write instead of blocking it
+
+Blocking is the loud outcome; **modifying** is often the useful one. Return
+`{ actions: [...] }` and commercetools applies those update actions as part of the
+very write it asked you about — the corrected write is what gets saved, and the caller
+sees no error. The actions are ordinary commercetools update actions for that resource.
+
+**cart-quantity-cap** does exactly this: it caps a line's quantity with
+`changeLineItemQuantity` rather than rejecting an over-large add. It is also the one
+template that is **API-extensions-only** — no `typeDefs` at all, so `validate`/`push`
+skip GraphQL composition for it — and the one that sets a **`condition`**: a
+commercetools query predicate (`lineItems is not empty`) that commercetools evaluates
+first, so it never calls you for a write your handler would obviously no-op on.
+
+| Return | Outcome |
+| --- | --- |
+| `{}` | approve, unchanged |
+| `{ actions: [...] }` | approve, having applied these update actions (**cart-quantity-cap**) |
+| `{ errors: [...] }` | block the entire write (**cart-sku-blocker**) |
+| *throws* | commercetools fails the write — never a silent approve |
+
 ### Try it locally
 
 `commercetools integration-layer extension invoke` fires a sample commercetools cart
@@ -199,6 +223,10 @@ cd examples/cart-sku-blocker
 pnpm dev                                                        # → extension invoke — the default (blocked) SKU
 commercetools integration-layer extension invoke --sku ALLOWED  # a SKU that passes
 commercetools integration-layer extension invoke --action Update --config BLOCKED_SKU=NO-SELL
+
+cd ../cart-quantity-cap
+pnpm dev                                                        # → MODIFY: the line is capped
+commercetools integration-layer extension invoke --quantity 2 --config MAX_LINE_QUANTITY=10
 ```
 
 Then `pnpm validate` / `pnpm push` as usual (an API-extensions-only bundle skips the
@@ -221,7 +249,7 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@
 | `@key(fields: "id")` | mark a type as an entity you're attaching to | re-declare the key field NON-`@external` (it identifies the entity); add your new fields alongside |
 | `@external` | reference a NON-key field the integration layer owns | for `@requires` only; you never resolve it. Do NOT put it on the key field — that stops the planner satisfying `@requires` (and stops you returning the entity as a stub) |
 | `@requires(fields: "…")` | pull integration-layer-owned data into your resolver | the planner resolves it onto the resolver's `parent` |
-| `@override(from: "integration-layer")` | take over an existing field | re-declare referenced types. Works for a field whose result types are its OWN; do NOT override a field whose result reuses SHARED value types (e.g. the Relay `Query.search` → `ProductSearchConnection`, which reuses `PageInfo`/`ProductEdge`) — overriding those seizes them graph-wide and breaks other connections |
+| `@override(from: "integration-layer")` | take over an existing field | re-declare referenced types **and `@override` their fields too** (`examples/category-counts-override`). Works for a field whose result types are its OWN; do NOT override a field whose result reuses SHARED value types (e.g. the Relay `Query.search` → `ProductSearchConnection`, which reuses `PageInfo`/`ProductEdge`) — overriding those seizes them graph-wide and breaks other connections |
 | `@shareable` | co-own a field with the integration layer | rarely needed; prefer a new field. An unshared duplicate fails composition |
 
 The rule of thumb is to add new fields rather than redefine existing ones. If your
@@ -423,9 +451,34 @@ type MyResult {
 ```
 
 Return product stubs in `items` and the router fills in the rest, so callers see no
-difference. The
-[flow diagram](#flow-a-storefront-product-search-through-the-algolia-override)
-traces a full request.
+difference.
+
+**Overriding a field whose result type the integration layer also declares** takes one
+more step, and `examples/category-counts-override` shows it. Re-declaring the result
+type means both subgraphs define its fields, which federation rejects
+("non-shareable field … resolved from multiple subgraphs"). `@override` those fields as
+well — per field, not just on the root field:
+
+```graphql
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.3", import: ["@key", "@override"])
+
+type Query {
+  categoryProductCounts(categoryIds: [ID!]): [CategoryProductCount!]! @override(from: "integration-layer")
+}
+type CategoryProductCount {
+  category: Category! @override(from: "integration-layer")   # both fields, or composition fails
+  count: Int! @override(from: "integration-layer")
+}
+type Category @key(fields: "id") { id: ID! }                 # an entity: key only, return { id } stubs
+```
+
+`@shareable` is NOT an alternative here: the integration layer does not mark its own
+copy shareable, and co-ownership needs both sides to agree.
+
+And note what you take on. You now own the field's **availability**: its signature is
+fixed (you cannot make a non-null result nullable), so if your service is down the
+field errors — an additive field could have degraded to `null`. If that trade isn't
+worth it, add a new field instead of overriding one.
 
 ### Entity catalog
 
@@ -443,6 +496,21 @@ instead of the opaque id.
 Keying by an optional `key` is a judgement call: the field only resolves for
 instances that actually have one, and a non-null field nulls out where the key is
 missing — stick with `id` unless you need the readable handle.
+
+Reach for the readable handle when your own data is keyed by it too — a config map or
+a finance-system table a human maintains per business unit, per category. Then the
+router hands your resolver `{ key: "acme-eu" }` and you look straight up, instead of
+keeping a second table of opaque ids. `examples/business-unit-cost-centres`:
+
+```graphql
+type BusinessUnit @key(fields: "key") {
+  key: String!                # the key: declared NORMALLY, not @external
+  costCentres: [String!]!
+}
+```
+
+(`BusinessUnit.key` and `Category.key` are non-null in the integration layer's schema,
+so this is safe for them; check before keying by a `key` that may be null.)
 
 **No nested types are extensibly keyed in the current v2 surface.** (v1 let you
 `@requires`-decorate a keyed `ProductPrice` and `Address`; v2 has no standalone
@@ -671,7 +739,8 @@ Local checks run offline and always apply:
    not the security boundary; the runtime enforces that.
 2. **Shape and coherence**: a non-empty `typeDefs`, a `resolvers` object, and a
    resolver for every type and field the SDL declares (a typo that would silently
-   no-op gets caught here).
+   no-op gets caught here), plus the shape of each `apiExtensions` entry. A bundle
+   must contribute at least one of the two.
 
 Remote checks need a `commercetools auth login` session and run against your project,
 the same way publishing does:
@@ -763,11 +832,15 @@ pnpm validate:<name>   pnpm push:<name>   # <name> = server-time | loyalty-point
 Per-example (the day-to-day flow), from inside `examples/<name>`:
 
 ```bash
-pnpm dev        # live server (above)
+pnpm dev        # the example's inner loop (below)
 pnpm build      # build dist/extension.js
 pnpm validate   # local + remote validation
 pnpm push       # build + validate + publish
 ```
+
+`pnpm dev` runs whichever inner loop suits the example's kind: `extension serve` for a
+schema extension (a live GraphQL server), or `extension invoke` for one whose surface is
+an API-Extension handler (fires a sample cart callback at it).
 
 `typecheck`/`lint` are offline; `build`/`dev`/`validate`/`push` run through the
 commercetools CLI, and `validate`/`push` also talk to the integration layer using
@@ -800,7 +873,10 @@ integration-layer-extension-examples/
     ├── price-discount/
     ├── customer-display-name/
     ├── algolia-recommendations/
-    └── cart-sku-blocker/
+    ├── business-unit-cost-centres/
+    ├── category-counts-override/
+    ├── cart-sku-blocker/
+    └── cart-quantity-cap/
 ```
 
 The build → validate → push flow is the `integration-layer` topic of the
