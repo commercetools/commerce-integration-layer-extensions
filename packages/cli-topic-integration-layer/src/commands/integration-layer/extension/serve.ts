@@ -28,7 +28,11 @@ import { composeWithIntegrationLayer, type ComposeResult } from "../../../lib/to
 import { discoverExtensions, mergeExtensionSubgraph } from "../../../lib/tooling/extensions.js";
 import { makeGateway, mintAnonymousSession } from "../../../lib/tooling/gateway.js";
 import { fetchSubgraphSdl } from "../../../lib/ilClient.js";
-import { IntegrationLayerCommand, type IlFlagValues } from "../../../lib/base.js";
+import {
+  IntegrationLayerCommand,
+  authEdgeUrlForRegion,
+  type IlFlagValues,
+} from "../../../lib/base.js";
 
 /** The host-mediated capability context the runtime passes a resolver (3rd arg). */
 interface ExtensionContext {
@@ -117,7 +121,33 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       description: "directory holding the extension packages (used with --all)",
       default: "extensions",
     }),
+    "auth-url": Flags.string({
+      description:
+        "identity edge base URL, where --gateway/--all mint their session and reach the core-subgraph /graphql (also settable via IL_AUTH_URL); overrides the URL derived from your login region",
+      env: "IL_AUTH_URL",
+      helpGroup: "INTEGRATION LAYER",
+    }),
   };
+
+  /**
+   * The identity/storefront edge (the `auth.` host) — where `--gateway`/`--all` mint the
+   * anonymous session AND reach the integration layer's CORE subgraph `/graphql`. Both are
+   * served by the storefront pod, a DIFFERENT host from the extensions edge
+   * ({@link IlContext.baseUrl}, `extensions.`, which serves `/subgraph`). The gateway must
+   * route to the core subgraph here, NOT the `graphql.` router edge, whose COMPOSED graph
+   * would double-count the local extension. Overridable via --auth-url / IL_AUTH_URL for
+   * staging zones that don't follow the production host convention.
+   */
+  private resolveAuthEdge(flags: { "auth-url"?: string }): string {
+    const authUrl = flags["auth-url"] ?? authEdgeUrlForRegion(this.requirePrincipal().getRegion());
+    if (!authUrl) {
+      throw new Error(
+        "could not resolve the identity edge URL: pass --auth-url or set IL_AUTH_URL " +
+          "(e.g. https://auth.integration-layer.eu-central-1.aws.commercetools.com)",
+      );
+    }
+    return authUrl.replace(/\/+$/, "");
+  }
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionServe);
@@ -141,11 +171,15 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     let integrationLayerBearer: string | undefined;
     if (withIntegrationLayer) {
       const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
-      integrationLayerGraphqlUrl = `${baseUrl}/${encodeURIComponent(projectKey)}/graphql`;
+      // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the
+      // gateway routes to and the /session it mints are on the storefront pod, reached via
+      // the identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
+      const authUrl = this.resolveAuthEdge(flags);
+      integrationLayerGraphqlUrl = `${authUrl}/${encodeURIComponent(projectKey)}/graphql`;
       this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
       integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, token);
       if (flags.gateway) {
-        integrationLayerBearer = await mintAnonymousSession(baseUrl, projectKey);
+        integrationLayerBearer = await mintAnonymousSession(authUrl, projectKey);
         this.log("Minted an anonymous session for the gateway.");
       }
     }
@@ -319,7 +353,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
    * re-merges the combined subgraph, and a schema change recomposes + rebuilds the gateway.
    */
   private async runAll(
-    flags: { port: number; "extensions-dir": string } & IlFlagValues,
+    flags: { port: number; "extensions-dir": string; "auth-url"?: string } & IlFlagValues,
   ): Promise<void> {
     const port = flags.port;
     const root = process.cwd();
@@ -333,10 +367,14 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     // Reach the integration layer exactly like --gateway: its core-subgraph SDL is the
     // compose baseline, and an anonymous session authenticates the gateway's calls.
     const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
-    const integrationLayerGraphqlUrl = `${baseUrl}/${encodeURIComponent(projectKey)}/graphql`;
+    // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the gateway
+    // routes to and the /session it mints are on the storefront pod, reached via the
+    // identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
+    const authUrl = this.resolveAuthEdge(flags);
+    const integrationLayerGraphqlUrl = `${authUrl}/${encodeURIComponent(projectKey)}/graphql`;
     this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
     const integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, token);
-    const integrationLayerBearer = await mintAnonymousSession(baseUrl, projectKey);
+    const integrationLayerBearer = await mintAnonymousSession(authUrl, projectKey);
     this.log("Minted an anonymous session for the gateway.");
 
     // The single combined-extensions subgraph endpoint — the gateway's one data source
