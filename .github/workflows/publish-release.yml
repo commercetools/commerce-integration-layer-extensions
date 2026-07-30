@@ -1,43 +1,49 @@
 name: Publish Release
 
-# Publishes @commercetools/cli-topic-integration-layer to the PUBLIC npm registry
-# via npm Trusted Publishing (OIDC) — no Changesets, no GitHub App, no stored token.
+# Versioning + changelog + publish for @commercetools/cli-topic-integration-layer, all in
+# ONE workflow via Changesets. This is the file npm Trusted Publishing is bound to: because
+# `npm publish` (run by `changeset publish`) executes in THIS workflow, the OIDC claim npm
+# validates is this filename. Everything lives here on purpose — no reusable workflow, no
+# cross-workflow tag/dispatch trigger (npm validates the *calling* workflow for workflow_call,
+# so a split would break the trusted-publisher binding).
 #
-# Push a version tag and this publishes that version:
+# The flow (standard Changesets), on every merge to main:
+#   - pending changesets  -> open/update a "Version Packages" PR (bump package.json + CHANGELOG)
+#   - no pending changesets (the Version PR just merged) -> `changeset publish` publishes the
+#     new version to the public npm registry and pushes the per-package git tag.
 #
-#   git tag v0.2.0 && git push origin v0.2.0
+# Auth is npm Trusted Publishing (OIDC): setup-node with `registry-url` + `id-token: write`
+# lets the npm CLI (>= 11.5.1) mint a short-lived token at publish time — no stored token.
+# Until the trusted publisher is provisioned (see the ct-apps Package request), the publish
+# step fails red — there is no fallback token.
 #
-# The tag version MUST match the plugin's package.json version (guarded below) —
-# package.json is the source of truth; the tag is just the release trigger.
-#
-# Auth is npm Trusted Publishing: `actions/setup-node` with `registry-url` +
-# `id-token: write` makes the npm CLI mint a short-lived OIDC token at publish
-# time. The trust is bound on the npm side to (repo, workflow-filename), which is
-# why publishing lives in this ONE file — a trusted publisher covers one workflow.
-#
-# It publishes nothing on its own: it runs only when a `v*` tag is pushed. Until
-# the trusted publisher is provisioned (see the ct-apps Package request), a tag
-# push fails red at the publish step — there is no fallback token.
+# ── Signatures: verified commits are required (repo ruleset) ──────────────────────────
+# The Version Packages commit is created via the GitHub API (commitMode: github-api) so
+# GitHub signs it — a local git-cli commit is unsigned and gets rejected (GH013). The
+# default GITHUB_TOKEN is enough: its API commits are GitHub-verified. Changesets' publish
+# tags are lightweight, so they don't hit the rule.
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 permissions:
-  contents: read
+  contents: write # Changesets: the version commit/PR + publish tags + GitHub releases
+  pull-requests: write # open/update the "Version Packages" PR
   id-token: write # required for npm Trusted Publishing (OIDC)
 
 jobs:
-  publish:
-    name: publish to public npm (OIDC)
+  release:
+    name: version + publish (Changesets, public npm OIDC)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Install pnpm
         uses: pnpm/action-setup@v6
@@ -57,32 +63,19 @@ jobs:
       - name: Ensure npm >= 11.5.1 for OIDC
         run: npm install -g npm@11
 
-      - name: Verify the tag matches the package version
-        run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          pkg_version="$(node -p "require('./packages/cli-topic-integration-layer/package.json').version")"
-          echo "tag=$tag_version package.json=$pkg_version"
-          if [ "$tag_version" != "$pkg_version" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match package version $pkg_version — bump package.json or fix the tag"
-            exit 1
-          fi
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build the CLI plugin
-        run: pnpm --filter @commercetools/cli-topic-integration-layer build
-
-      - name: Publish to public npm (OIDC)
-        # Registry + public access come from the package's publishConfig. npm (>=
-        # 11.5.1) mints the OIDC token from the trusted-publisher binding — no token
-        # env. Tolerate a re-run for an already-published version.
-        working-directory: packages/cli-topic-integration-layer
-        run: |
-          if out=$(npm publish 2>&1); then
-            echo "$out"
-          else
-            echo "$out"
-            echo "$out" | grep -qiE 'cannot publish over|already exists|EPUBLISHCONFLICT|409' || exit 1
-            echo ">> version already published, nothing to do"
-          fi
+      - name: Version (Version Packages PR) or publish
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset:version
+          publish: pnpm changeset:publish
+          commit: 'ci(changesets): version packages'
+          title: 'ci(changesets): version packages'
+          # Create the Version Packages commit via the GitHub API, not local git. The
+          # repo ruleset requires verified signatures; API-created commits are signed by
+          # GitHub (a local git-cli commit is unsigned and gets rejected — GH013).
+          commitMode: github-api
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

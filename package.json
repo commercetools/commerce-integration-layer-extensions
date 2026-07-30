@@ -14,6 +14,7 @@
     "test": "pnpm -r test",
     "changeset": "changeset",
     "changeset:version": "changeset version",
+    "changeset:publish": "pnpm --filter @commercetools/cli-topic-integration-layer build && changeset publish",
     "dev:server-time": "pnpm --filter @example-extensions/server-time dev",
     "dev:loyalty-points": "pnpm --filter @example-extensions/loyalty-points dev",
     "dev:price-discount": "pnpm --filter @example-extensions/price-discount dev",

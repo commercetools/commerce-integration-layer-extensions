@@ -21,11 +21,10 @@ no user-facing plugin change needs no changeset (e.g. docs, an example-only edit
 
 You do **not** run `changeset version` or publish by hand:
 
-1. On merge to `main`, `.github/workflows/release.yml` collects pending changesets and
-   opens/updates a **"Version Packages"** PR that bumps `package.json` and writes the
+1. On merge to `main`, `.github/workflows/publish-release.yml` collects pending changesets
+   and opens/updates a **"Version Packages"** PR that bumps `package.json` and writes the
    CHANGELOG.
-2. Merging that PR pushes a `v<version>` tag, which triggers
-   `.github/workflows/publish-release.yml` to publish to the public npm registry via
-   Trusted Publishing (OIDC).
+2. Merging that PR re-runs the same workflow, which now runs `changeset publish` to
+   publish to the public npm registry via Trusted Publishing (OIDC) and push the tag.
 
-See [`docs`/the repo README](../README.md#release) for the full flow.
+See [the repo README](../README.md#release) for the full flow.

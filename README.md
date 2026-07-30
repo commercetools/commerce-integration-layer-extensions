@@ -1009,27 +1009,22 @@ pnpm changeset
    becomes the CHANGELOG entry. Commit the generated `.changeset/<name>.md`. A PR that
    doesn't change the plugin (docs, an example-only edit) needs none.
 
-2. **On merge to `main`**, `.github/workflows/release.yml` collects pending changesets
-   and opens/updates a **"Version Packages"** PR that bumps `package.json` and writes the
-   CHANGELOG. Nothing is published yet.
+2. **On merge to `main`**, `.github/workflows/publish-release.yml` runs Changesets. With
+   pending changesets it opens/updates a **"Version Packages"** PR that bumps
+   `package.json` and writes the CHANGELOG. Nothing is published yet.
 
-3. **Merging the Version Packages PR** pushes a `v<version>` tag, which triggers
-   `.github/workflows/publish-release.yml` to publish to the public npm registry via npm
-   Trusted Publishing (OIDC) — no stored token.
+3. **Merging the Version Packages PR** re-runs the same workflow with no pending
+   changesets, so it runs `changeset publish` — publishing to the public npm registry via
+   npm Trusted Publishing (OIDC, no stored token) and pushing the per-package tag.
 
-`package.json` + the tag remain the single publish gate; Changesets just produces both.
+It is one workflow on purpose. `npm publish` runs inside `publish-release.yml`, so that is
+the filename npm Trusted Publishing validates (the trusted publisher is bound to it) — a
+reusable/`workflow_call` split would make npm validate the *calling* workflow instead and
+break the binding. `id-token: write` is set on the workflow.
 
 The repo ruleset requires **verified signatures**, so the Version Packages commit is
-created via the GitHub API (`commitMode: github-api`), which GitHub signs — a plain
-local commit would be rejected. Two secrets are optional (both off by default):
+created via the GitHub API (`commitMode: github-api`), which GitHub signs — a plain local
+commit would be rejected. The default `GITHUB_TOKEN` is enough; no extra secret is
+required. Changesets' publish tags are lightweight (no commit), so they don't hit the rule.
 
-- `RELEASE_TAG_PUSH_TOKEN` — makes step 3's tag trigger `publish-release.yml` (a
-  `GITHUB_TOKEN`-pushed tag can't start another workflow). A fine-grained PAT with
-  `contents:write`, or a GitHub App token. Without it the tag is still pushed, but a
-  maintainer re-pushes it once to publish.
-- `CHANGESETS_APP_TOKEN` — set to the CT Changesets App token if you also want the
-  Version Packages PR to trigger CI. Must be `GITHUB_TOKEN` or a GitHub App token (App
-  API commits stay verified) — **not** a plain user PAT, whose API commits are
-  unverified and would fail the signature rule.
-
-See the header of `.github/workflows/release.yml` for details.
+See the header of `.github/workflows/publish-release.yml` for details.
