@@ -13,14 +13,21 @@ name: Release
 #      changesets, sees the bumped version has no tag yet, and pushes `v<version>` —
 #      which triggers publish-release.yml to publish.
 #
-# ── The one out-of-repo requirement ──────────────────────────────────────────────────
-# A tag pushed with the default GITHUB_TOKEN does NOT trigger another workflow (GitHub's
-# recursion guard), so the auto hand-off to publish-release.yml needs a token that CAN:
-# set the repo/org secret RELEASE_TAG_PUSH_TOKEN to a fine-grained PAT (contents:write)
-# or the CT Changesets App token. Using it for the Changesets step too means the Version
-# PR triggers CI as a bonus. It is OPTIONAL: without it this workflow still opens the
-# Version PR and pushes the tag (via GITHUB_TOKEN) — publish-release.yml just won't
-# auto-run, so a maintainer re-pushes the tag (or runs it) once. Nothing publishes here.
+# ── Signatures: verified commits are required (repo ruleset) ──────────────────────────
+# The Version Packages commit is created via the GitHub API (commitMode: github-api) so
+# GitHub signs it — a local git-cli commit is unsigned and gets rejected (GH013). That
+# API commit uses GITHUB_TOKEN (or a GitHub App token) — never a plain user PAT, whose
+# API commits are unverified.
+#
+# ── Optional tokens (both are OFF by default; nothing here publishes) ──────────────────
+# 1. RELEASE_TAG_PUSH_TOKEN — a tag pushed with the default GITHUB_TOKEN does NOT trigger
+#    another workflow (GitHub's recursion guard), so the auto hand-off to publish-release.yml
+#    needs a trigger-capable token: a fine-grained PAT (contents:write) or a GitHub App
+#    token. Without it the tag is still pushed (via GITHUB_TOKEN) but publish-release.yml
+#    won't auto-run — a maintainer re-pushes the tag once to publish.
+# 2. CHANGESETS_APP_TOKEN — set to the CT Changesets App token if you also want the
+#    Version Packages PR to trigger CI (a PR opened by GITHUB_TOKEN doesn't). App API
+#    commits stay GitHub-verified, so the signature rule is still satisfied.
 
 on:
   push:
@@ -68,8 +75,16 @@ jobs:
           # No `publish` — publishing is publish-release.yml's job (OIDC on a version tag).
           commit: 'ci(changesets): version packages'
           title: 'ci(changesets): version packages'
+          # Create the Version Packages commit via the GitHub API, not local git. The
+          # repo ruleset requires verified signatures; API-created commits are signed by
+          # GitHub (a local git-cli commit is unsigned and gets rejected — GH013).
+          commitMode: github-api
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TAG_PUSH_TOKEN || secrets.GITHUB_TOKEN }}
+          # Must be a token whose API commits are GitHub-verified: GITHUB_TOKEN (default)
+          # or a GitHub App token (e.g. the CT Changesets App). NOT a plain user PAT — its
+          # API commits are unverified and the ruleset would reject them. This is separate
+          # from RELEASE_TAG_PUSH_TOKEN, which only exists to make the tag trigger publish.
+          GITHUB_TOKEN: ${{ secrets.CHANGESETS_APP_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Tag the release when the Version PR has landed
         # hasChangesets == false means nothing is pending: either the Version PR just

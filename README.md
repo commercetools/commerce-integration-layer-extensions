@@ -1018,8 +1018,18 @@ pnpm changeset
    Trusted Publishing (OIDC) — no stored token.
 
 `package.json` + the tag remain the single publish gate; Changesets just produces both.
-The tag hand-off in step 3 needs a trigger-capable token (a `GITHUB_TOKEN`-pushed tag
-can't start another workflow) — set the `RELEASE_TAG_PUSH_TOKEN` secret (a fine-grained
-PAT with `contents:write`, or the CT Changesets App token). Without it the Version PR and
-tag are still produced, but a maintainer re-pushes the tag once to publish. See the
-header of `.github/workflows/release.yml` for details.
+
+The repo ruleset requires **verified signatures**, so the Version Packages commit is
+created via the GitHub API (`commitMode: github-api`), which GitHub signs — a plain
+local commit would be rejected. Two secrets are optional (both off by default):
+
+- `RELEASE_TAG_PUSH_TOKEN` — makes step 3's tag trigger `publish-release.yml` (a
+  `GITHUB_TOKEN`-pushed tag can't start another workflow). A fine-grained PAT with
+  `contents:write`, or a GitHub App token. Without it the tag is still pushed, but a
+  maintainer re-pushes it once to publish.
+- `CHANGESETS_APP_TOKEN` — set to the CT Changesets App token if you also want the
+  Version Packages PR to trigger CI. Must be `GITHUB_TOKEN` or a GitHub App token (App
+  API commits stay verified) — **not** a plain user PAT, whose API commits are
+  unverified and would fail the signature rule.
+
+See the header of `.github/workflows/release.yml` for details.
