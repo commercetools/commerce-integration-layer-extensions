@@ -34,6 +34,8 @@ commercetools integration-layer config list               # config entries (secr
 commercetools integration-layer config get <KEY>
 commercetools integration-layer config set <KEY> <VALUE> [--secret]
 commercetools integration-layer config unset <KEY>
+
+commercetools integration-layer --version             # print the installed plugin version [local]
 ```
 
 Authenticated commands present the token from `commercetools auth login` (a
