@@ -244,12 +244,16 @@ export default class Init extends Command {
     "Scaffold an integration-layer extensions monorepo (a pnpm workspace with one hello-world extension)";
 
   static override examples = [
+    "<%= config.bin %> integration-layer init",
     "<%= config.bin %> integration-layer init my-extensions",
     "<%= config.bin %> integration-layer init my-extensions --template basic",
   ];
 
   static override args = {
-    directory: Args.string({ description: "directory to scaffold the monorepo into", required: true }),
+    directory: Args.string({
+      description: "directory to scaffold the monorepo into (defaults to the current directory)",
+      default: ".",
+    }),
   };
 
   static override flags = {
@@ -271,7 +275,8 @@ export default class Init extends Command {
 
     const existing = await readdir(dir).catch(() => [] as string[]);
     if (existing.length > 0 && !flags.force) {
-      this.error(`Directory '${dir}' is not empty. Pass --force to scaffold into it anyway.`);
+      const what = dir === "." ? "The current directory" : `Directory '${dir}'`;
+      this.error(`${what} is not empty. Pass --force to scaffold into it anyway.`);
     }
 
     const files = templateFiles(projectNameFor(dir));
@@ -281,9 +286,10 @@ export default class Init extends Command {
       await writeFile(target, contents, "utf8");
     }
 
-    this.log(`✓ scaffolded a '${flags.template}' extensions monorepo in ${dir}`);
+    const location = dir === "." ? "the current directory" : dir;
+    this.log(`✓ scaffolded a '${flags.template}' extensions monorepo in ${location}`);
     this.log("Next steps:");
-    this.log(`  cd ${dir}`);
+    if (dir !== ".") this.log(`  cd ${dir}`);
     this.log("  pnpm install");
     this.log("  pnpm dev   # run the hello-world extension locally");
   }

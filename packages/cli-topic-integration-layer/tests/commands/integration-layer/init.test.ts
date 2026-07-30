@@ -53,6 +53,34 @@ describe("integration-layer init", () => {
     expect(readme).toContain("commercetools auth login");
   });
 
+  it("scaffolds into the current directory when no directory is given", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "il-cli-init-"));
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const { error } = await captureOutput(async () => Init.run([]), { print: false });
+      expect(error).toBeUndefined();
+    } finally {
+      process.chdir(cwd);
+    }
+
+    const entries = await readdir(dir);
+    expect(entries).toContain("pnpm-workspace.yaml");
+  });
+
+  it("refuses a non-empty current directory without --force", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "il-cli-init-"));
+    await writeFile(join(dir, "existing.txt"), "keep me", "utf8");
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      const { error } = await captureOutput(async () => Init.run([]), { print: false });
+      expect(error?.message).toMatch(/not empty/);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+
   it("refuses a non-empty directory without --force", async () => {
     const dir = await mkdtemp(join(tmpdir(), "il-cli-init-"));
     await writeFile(join(dir, "existing.txt"), "keep me", "utf8");
