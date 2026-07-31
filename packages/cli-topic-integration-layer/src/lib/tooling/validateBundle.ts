@@ -38,9 +38,26 @@ export type ValidationResult = {
   apiExtensionKeys: string[];
 };
 
-type ExtensionModule = { typeDefs?: unknown; resolvers?: unknown; apiExtensions?: unknown };
+type ExtensionModule = {
+  typeDefs?: unknown;
+  resolvers?: unknown;
+  apiExtensions?: unknown;
+  hooks?: unknown;
+};
 
 const API_EXTENSION_ACTIONS = new Set(['Create', 'Update']);
+
+/**
+ * Does the bundle carry a capability the runtime dispatches directly, rather than
+ * through the schema or an API Extension? Such a capability adds nothing to the SDL, so
+ * a bundle whose only contribution is one of them is COMPLETE without `typeDefs` — it
+ * must not be rejected for having no subgraph. `buildCombinedBundle` already carries
+ * these through when it merges bundles; this is the matching check on the way in.
+ */
+function hasDispatchOnlyCapability(mod: ExtensionModule): boolean {
+  const { hooks } = mod;
+  return typeof hooks === 'object' && hooks !== null && Object.keys(hooks).length > 0;
+}
 
 /**
  * Validate the bundle's optional `apiExtensions` export (shape only — a handler's
@@ -117,15 +134,17 @@ export async function validateBundle(
   const { typeDefs, resolvers } = mod;
   const apiExtensionKeys = validateApiExtensions(mod.apiExtensions);
 
-  // A bundle must contribute at least one of a GraphQL subgraph or API Extensions.
+  // A bundle must contribute SOMETHING: a GraphQL subgraph, API Extensions, or a
+  // capability the runtime dispatches directly (hasDispatchOnlyCapability).
   const hasTypeDefs = typeof typeDefs === "string" && typeDefs.trim() !== "";
   if (!hasTypeDefs) {
-    if (apiExtensionKeys.length === 0) {
+    if (apiExtensionKeys.length === 0 && !hasDispatchOnlyCapability(mod)) {
       throw new BundleValidationError(
         "bundle must export a non-empty `typeDefs` string and/or an `apiExtensions` array",
       );
     }
-    // API-extensions-only bundle: no SDL to check, no remote composition.
+    // Nothing here contributes to the schema: no SDL to check, and nothing to compose
+    // remotely. The bundle is still uploaded as-is.
     return { typeDefs: null, resolverTypes: [], apiExtensionKeys };
   }
   if (resolvers === null || typeof resolvers !== "object") {
