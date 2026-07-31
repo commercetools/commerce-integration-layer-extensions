@@ -1,4 +1,5 @@
-import { Args } from "@oclif/core";
+import { Args, Flags } from "@oclif/core";
+import { confirmAllowlistChange } from "../../../lib/allowlistPrompt.js";
 import { getAllowlist, putAllowlist } from "../../../lib/ilClient.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
 
@@ -9,11 +10,19 @@ export default class AllowlistRemove extends IntegrationLayerCommand {
   static override examples = [
     "<%= config.bin %> integration-layer allowlist remove api.vendor.com",
     "<%= config.bin %> integration-layer allowlist remove api.vendor.com '*.algolia.net'",
+    "<%= config.bin %> integration-layer allowlist remove api.vendor.com --force",
   ];
 
   // Variadic: read-modify-write, same as `add` — the write route replaces the whole
   // allow list, so we PUT the remaining hosts.
   static override strict = false;
+
+  static override flags = {
+    force: Flags.boolean({
+      description: "apply the change without confirmation",
+      default: false,
+    }),
+  };
 
   static override args = {
     host: Args.string({
@@ -35,6 +44,20 @@ export default class AllowlistRemove extends IntegrationLayerCommand {
 
     if (remaining.length === allow.length) {
       this.log(`Nothing to remove — no matching host in the allowlist for '${projectKey}'.`);
+      return;
+    }
+
+    const confirmed = await confirmAllowlistChange({
+      projectKey,
+      action: "remove",
+      current: allow,
+      next: remaining,
+      force: flags.force,
+      log: (line) => this.log(line),
+      abort: (message) => this.error(message),
+    });
+    if (!confirmed) {
+      this.log("Aborted.");
       return;
     }
 

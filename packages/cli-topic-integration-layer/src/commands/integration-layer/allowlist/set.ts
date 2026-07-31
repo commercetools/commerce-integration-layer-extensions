@@ -1,5 +1,6 @@
-import { Args } from "@oclif/core";
-import { putAllowlist } from "../../../lib/ilClient.js";
+import { Args, Flags } from "@oclif/core";
+import { confirmAllowlistChange } from "../../../lib/allowlistPrompt.js";
+import { getAllowlist, putAllowlist } from "../../../lib/ilClient.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
 
 export default class AllowlistSet extends IntegrationLayerCommand {
@@ -8,11 +9,19 @@ export default class AllowlistSet extends IntegrationLayerCommand {
 
   static override examples = [
     "<%= config.bin %> integration-layer allowlist set api.vendor.com '*.algolia.net'",
+    "<%= config.bin %> integration-layer allowlist set api.vendor.com --force",
   ];
 
   // Variadic: full replace, but at least one host is required — clearing the whole
   // list in one shot is too easy to do by mistake.
   static override strict = false;
+
+  static override flags = {
+    force: Flags.boolean({
+      description: "apply the change without confirmation",
+      default: false,
+    }),
+  };
 
   static override args = {
     host: Args.string({
@@ -30,6 +39,21 @@ export default class AllowlistSet extends IntegrationLayerCommand {
       );
     }
     const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+
+    const { allow: current } = await getAllowlist(baseUrl, projectKey, token);
+    const confirmed = await confirmAllowlistChange({
+      projectKey,
+      action: "set",
+      current,
+      next: hosts,
+      force: flags.force,
+      log: (line) => this.log(line),
+      abort: (message) => this.error(message),
+    });
+    if (!confirmed) {
+      this.log("Aborted.");
+      return;
+    }
 
     const { allow, version } = await putAllowlist(baseUrl, projectKey, token, hosts);
     this.log(`✓ set the allowlist for '${projectKey}' (version ${version}).`);
