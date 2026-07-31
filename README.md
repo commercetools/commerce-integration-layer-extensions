@@ -698,7 +698,10 @@ EXTENSION_CONFIG_ALGOLIA_API_KEY=search-only-key \
 live GraphQL server with GraphiQL and esbuild watch, so you get a real inner loop. It builds the same bundle the
 runtime loads, serves it as an Apollo Federation v2 subgraph, and calls your
 resolvers with the same `ctx` they would get in production (`ctx.now()`, and
-`ctx.config` from `EXTENSION_CONFIG_*`). Save the file and the schema reloads.
+`ctx.config` from `EXTENSION_CONFIG_*`). When logged in and online, resolver `fetch`
+is gated by the same project HTTP allowlist as production; without login or when the
+integration layer is unreachable, `fetch` is unrestricted locally (with a warning).
+Save the file and the schema reloads.
 
 ```bash
 cd examples/loyalty-points
@@ -712,8 +715,14 @@ pnpm dev --gateway --port 4005  # (pick a port)
 > `pnpm dev:<example>` shortcut only covers the default mode; flags do not survive
 > its two pnpm layers.
 
-- **standalone** (offline): query your fields directly, or exercise entity-extension
-  fields like `Product.loyaltyPoints` through the `_entities` query. No setup.
+When logged in and the integration layer is reachable, resolver `fetch` follows the
+project HTTP allowlist (`GET …/extension/allowlist`). Add hosts with
+`commercetools integration-layer allowlist add …` before a gated resolver can reach
+them. Without login or offline, `fetch` is unrestricted locally (stderr warning).
+
+- **standalone** (offline or no login): query your fields directly, or exercise
+  entity-extension fields like `Product.loyaltyPoints` through the `_entities` query.
+  No setup required.
 - **`--compose`**: pulls your project's integration-layer SDL and composes it with
   your extension, exactly as publish does. The merged schema is browsable at
   `/composed`, with SDL at `/schema.graphql` and `/supergraph.graphql`. A
@@ -727,7 +736,8 @@ pnpm dev --gateway --port 4005  # (pick a port)
   `/_extension`.
 
 > `--compose` and `--gateway` reach the real integration layer, so point
-> `INTEGRATION_LAYER_URL` at your deployment. Standalone needs nothing.
+> `INTEGRATION_LAYER_URL` at your deployment. Standalone needs nothing beyond the
+> extension source; login is optional but enables production-parity allowlist gating.
 
 ## Validate & publish
 

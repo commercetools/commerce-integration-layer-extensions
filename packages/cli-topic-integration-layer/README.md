@@ -22,6 +22,7 @@ commercetools plugins install @commercetools/cli-topic-integration-layer
 commercetools integration-layer init <DIR>               # scaffold an extension project [local]
 
 commercetools integration-layer extension build          # bundle src/extension.ts -> dist [local]
+commercetools integration-layer extension serve          # local dev server (allowlist-gated fetch when online + logged in)
 commercetools integration-layer extension validate        # local checks + remote compose/breaking gate
 commercetools integration-layer extension push [--force]   # build + validate + upload the bundle
                        [--source-revision <rev> | --no-source-revision]   # provenance; default: detected from git
