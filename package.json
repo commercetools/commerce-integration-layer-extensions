@@ -1,0 +1,52 @@
+{
+  "name": "integration-layer-extensions",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "setup:cli": "pnpm --filter @commercetools/cli-topic-integration-layer build && commercetools plugins link packages/cli-topic-integration-layer",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r test",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "pnpm --filter @commercetools/cli-topic-integration-layer build && changeset publish",
+    "dev:server-time": "pnpm --filter @example-extensions/server-time dev",
+    "dev:loyalty-points": "pnpm --filter @example-extensions/loyalty-points dev",
+    "dev:price-discount": "pnpm --filter @example-extensions/price-discount dev",
+    "dev:customer-display-name": "pnpm --filter @example-extensions/customer-display-name dev",
+    "dev:algolia-recommendations": "pnpm --filter @example-extensions/algolia-recommendations dev",
+    "dev:business-unit-cost-centres": "pnpm --filter @example-extensions/business-unit-cost-centres dev",
+    "dev:category-counts-override": "pnpm --filter @example-extensions/category-counts-override dev",
+    "dev:cart-sku-blocker": "pnpm --filter @example-extensions/cart-sku-blocker dev",
+    "dev:cart-quantity-cap": "pnpm --filter @example-extensions/cart-quantity-cap dev",
+    "validate:server-time": "pnpm --filter @example-extensions/server-time validate",
+    "validate:loyalty-points": "pnpm --filter @example-extensions/loyalty-points validate",
+    "validate:price-discount": "pnpm --filter @example-extensions/price-discount validate",
+    "validate:customer-display-name": "pnpm --filter @example-extensions/customer-display-name validate",
+    "validate:algolia-recommendations": "pnpm --filter @example-extensions/algolia-recommendations validate",
+    "validate:business-unit-cost-centres": "pnpm --filter @example-extensions/business-unit-cost-centres validate",
+    "validate:category-counts-override": "pnpm --filter @example-extensions/category-counts-override validate",
+    "validate:cart-sku-blocker": "pnpm --filter @example-extensions/cart-sku-blocker validate",
+    "validate:cart-quantity-cap": "pnpm --filter @example-extensions/cart-quantity-cap validate",
+    "push:server-time": "pnpm --filter @example-extensions/server-time push",
+    "push:loyalty-points": "pnpm --filter @example-extensions/loyalty-points push",
+    "push:price-discount": "pnpm --filter @example-extensions/price-discount push",
+    "push:customer-display-name": "pnpm --filter @example-extensions/customer-display-name push",
+    "push:algolia-recommendations": "pnpm --filter @example-extensions/algolia-recommendations push",
+    "push:business-unit-cost-centres": "pnpm --filter @example-extensions/business-unit-cost-centres push",
+    "push:category-counts-override": "pnpm --filter @example-extensions/category-counts-override push",
+    "push:cart-sku-blocker": "pnpm --filter @example-extensions/cart-sku-blocker push",
+    "push:cart-quantity-cap": "pnpm --filter @example-extensions/cart-quantity-cap push"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "eslint": "^9.39.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.62.1"
+  }
+}

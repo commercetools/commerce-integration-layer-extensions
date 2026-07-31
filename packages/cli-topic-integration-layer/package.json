@@ -1,0 +1,47 @@
+{
+  "name": "@commercetools/cli-topic-integration-layer",
+  "version": "0.5.0",
+  "description": "commercetools CLI plugin: integration-layer topic",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "pnpm clean && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run --disable-console-intercept"
+  },
+  "dependencies": {
+    "@commercetools/cli-plugin-auth": ">=0.0.6",
+    "@apollo/composition": "^2.14.1",
+    "@apollo/gateway": "^2.14.1",
+    "@apollo/subgraph": "^2.14.1",
+    "@envelop/apollo-federation": "^8.1.1",
+    "@graphql-tools/merge": "^9.2.2",
+    "@oclif/core": "4.2.10",
+    "esbuild": "^0.28.0",
+    "graphql": "^16.9.0",
+    "graphql-yoga": "^5.21.2",
+    "typescript": "^5.7.2"
+  },
+  "devDependencies": {
+    "@commercetools/platform-sdk": "8.25.0",
+    "@oclif/test": "^4.1.12",
+    "@types/node": "^22.10.2",
+    "rimraf": "^6.0.1",
+    "vitest": "^4.1.8"
+  },
+  "oclif": {
+    "topicSeparator": " ",
+    "commands": "./dist/commands"
+  }
+}
