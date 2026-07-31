@@ -225,6 +225,62 @@ export async function deleteExtensionSubgraph(
   }
 }
 
+/**
+ * The project's extension HTTP allowlist: the merchant-tunable `allow` host patterns
+ * the extension sandbox's `fetch` may reach, plus the operator `deny` ceiling. A host
+ * is permitted iff it matches `allow` AND not `deny`. Patterns are bare hosts —
+ * `api.foo.com` or leading-wildcard `*.foo.com` (no scheme, port, or path).
+ *
+ * `deny` is read-only over HTTP (the operator's veto, edited out-of-band); only
+ * `allow` is writable, and only by full replacement (see {@link putAllowlist}).
+ */
+export interface AllowlistView {
+  allow: string[];
+  deny: string[];
+}
+
+/** GET the project's extension HTTP allowlist (`GET …/extension/allowlist`). */
+export async function getAllowlist(
+  baseUrl: string,
+  projectKey: string,
+  token: string,
+): Promise<AllowlistView> {
+  const url = `${apiRoot(baseUrl, projectKey)}/extension/allowlist`;
+  const res = await fetch(url, { headers: { accept: "application/json", ...bearer(token) } });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GET extension/allowlist failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as AllowlistView;
+}
+
+/**
+ * Replace the merchant `allow` patterns with `patterns` (`PUT …/extension/allowlist`).
+ * The route takes a bare JSON array and REPLACES the whole allow list — the add/remove
+ * commands read-modify-write around it. The integration layer validates and normalizes
+ * (lowercases, de-dupes, rejects schemes/ports/paths/IPs/over-broad patterns) and
+ * returns the stored list plus the config's new monotonic version. The `deny` ceiling
+ * is untouched (it has no write route).
+ */
+export async function putAllowlist(
+  baseUrl: string,
+  projectKey: string,
+  token: string,
+  patterns: string[],
+): Promise<{ allow: string[]; version: number }> {
+  const url = `${apiRoot(baseUrl, projectKey)}/extension/allowlist`;
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...bearer(token) },
+    body: JSON.stringify(patterns),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`PUT extension/allowlist failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as { allow: string[]; version: number };
+}
+
 /** List the project's extension config entries, secret values redacted (`GET …/extension/config`). */
 export async function listConfig(
   baseUrl: string,

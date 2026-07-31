@@ -35,6 +35,11 @@ commercetools integration-layer config get <KEY>
 commercetools integration-layer config set <KEY> <VALUE> [--secret]
 commercetools integration-layer config unset <KEY>
 
+commercetools integration-layer allowlist list            # hosts the extension's fetch may reach (+ operator deny)
+commercetools integration-layer allowlist add <HOST...>    # allow one or more hosts (api.foo.com or *.foo.com)
+commercetools integration-layer allowlist remove <HOST...>  # stop allowing one or more hosts
+commercetools integration-layer allowlist set [HOST...]    # replace the whole allowlist (no args clears it)
+
 commercetools integration-layer --version             # print the installed plugin version [local]
 ```
 
