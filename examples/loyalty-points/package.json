@@ -1,0 +1,17 @@
+{
+  "name": "@example-extensions/loyalty-points",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "commercetools integration-layer extension build",
+    "dev": "commercetools integration-layer extension serve",
+    "validate": "commercetools integration-layer extension validate",
+    "push": "commercetools integration-layer extension push",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

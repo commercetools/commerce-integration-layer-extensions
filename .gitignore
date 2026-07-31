@@ -1,0 +1,11 @@
+# Dependencies
+node_modules/
+
+# esbuild bundle output (built by `commercetools integration-layer extension build`, never committed)
+dist/
+
+# Local environment / credentials
+.env
+
+# Local agent notes (not part of the published repo)
+.claude/

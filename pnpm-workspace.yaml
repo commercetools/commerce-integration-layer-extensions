@@ -1,0 +1,36 @@
+packages:
+  # The example extension templates — each self-contained: edit src/extension.ts, then
+  # `commercetools integration-layer extension validate` / `... push`. The
+  # build → validate → push flow lives in the CLI plugin below, not in this workspace.
+  - 'examples/*'
+  # The integration-layer CLI plugin (@commercetools/cli-topic-integration-layer),
+  # published from here to the public npm registry. See docs/cli.md.
+  - 'packages/*'
+
+allowBuilds:
+  esbuild: true
+  '@apollo/protobufjs': false
+  protobufjs: false
+  # unrs-resolver ships a native binary; eslint resolves fine without it (pulled by the CLI plugin).
+  unrs-resolver: false
+
+# Refuse dependency versions published less than 24h ago. Minutes; 1440 = 24h.
+minimumReleaseAge: 1440
+
+overrides:
+  # Force a patched uuid. The Apollo federation packages (pulled by the CLI plugin's
+  # @apollo/composition|gateway|subgraph) transitively depend on uuid 9.0.1, which
+  # carries CVE-2026-41907; 11.1.1 is the first patched release keeping the exports they use.
+  uuid: '^11.1.1'
+
+  # Force a patched brace-expansion. CVE-2026-14257 (unbounded expansion length -> OOM)
+  # is only fixed in 5.0.8 — the advisory's affected range is `<= 5.0.7`, so the 1.x and
+  # 2.x lines count as vulnerable no matter how far you bump them. 5.0.8 also carries the
+  # CVE-2026-13149 fix.
+  brace-expansion: '^5.0.8'
+  # brace-expansion 5 exports `{ expand }` instead of a callable module, which only
+  # minimatch >= 10 knows how to call — minimatch 3/5/9 (pulled by eslint, @oclif/core and
+  # ejs -> jake -> filelist) still do `require('brace-expansion')(...)` and would crash.
+  # 10.2.5 keeps the named exports (`minimatch`, `Minimatch`, `match`) every consumer here
+  # uses; none of them rely on minimatch's CJS default export.
+  minimatch: '^10.2.5'

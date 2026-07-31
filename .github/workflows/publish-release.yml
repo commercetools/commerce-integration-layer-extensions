@@ -1,0 +1,81 @@
+name: Publish Release
+
+# Versioning + changelog + publish for @commercetools/cli-topic-integration-layer, all in
+# ONE workflow via Changesets. This is the file npm Trusted Publishing is bound to: because
+# `npm publish` (run by `changeset publish`) executes in THIS workflow, the OIDC claim npm
+# validates is this filename. Everything lives here on purpose — no reusable workflow, no
+# cross-workflow tag/dispatch trigger (npm validates the *calling* workflow for workflow_call,
+# so a split would break the trusted-publisher binding).
+#
+# The flow (standard Changesets), on every merge to main:
+#   - pending changesets  -> open/update a "Version Packages" PR (bump package.json + CHANGELOG)
+#   - no pending changesets (the Version PR just merged) -> `changeset publish` publishes the
+#     new version to the public npm registry and pushes the per-package git tag.
+#
+# Auth is npm Trusted Publishing (OIDC): setup-node with `registry-url` + `id-token: write`
+# lets the npm CLI (>= 11.5.1) mint a short-lived token at publish time — no stored token.
+# Until the trusted publisher is provisioned on the npm side, the publish step fails red —
+# there is no fallback token.
+#
+# ── Signatures: verified commits are required (repo ruleset) ──────────────────────────
+# The Version Packages commit is created via the GitHub API (commitMode: github-api) so
+# GitHub signs it — a local git-cli commit is unsigned and gets rejected (GH013). The
+# default GITHUB_TOKEN is enough: its API commits are GitHub-verified. Changesets' publish
+# tags are lightweight, so they don't hit the rule.
+
+on:
+  push:
+    branches: [main]
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write # Changesets: the version commit/PR + publish tags + GitHub releases
+  pull-requests: write # open/update the "Version Packages" PR
+  id-token: write # required for npm Trusted Publishing (OIDC)
+
+jobs:
+  release:
+    name: version + publish (Changesets, public npm OIDC)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.8.0
+
+      # setup-node with registry-url + id-token:write is what configures npm OIDC.
+      - name: Use Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: pnpm
+
+      # OIDC trusted publishing needs npm >= 11.5.1. npm@12 currently ships a
+      # broken sigstore dependency, so pin to the 11 line (as MCAK does).
+      - name: Ensure npm >= 11.5.1 for OIDC
+        run: npm install -g npm@11
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Version (Version Packages PR) or publish
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset:version
+          publish: pnpm changeset:publish
+          commit: 'ci(changesets): version packages'
+          title: 'ci(changesets): version packages'
+          # Create the Version Packages commit via the GitHub API, not local git. The
+          # repo ruleset requires verified signatures; API-created commits are signed by
+          # GitHub (a local git-cli commit is unsigned and gets rejected — GH013).
+          commitMode: github-api
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
