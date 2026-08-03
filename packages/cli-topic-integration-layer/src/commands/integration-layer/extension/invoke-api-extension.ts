@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { Command, Flags } from "@oclif/core";
-import { buildBundle, defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
+import { defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
+import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 import { loadBundleSource } from "../../../lib/tooling/loadBundle.js";
 import type {
   ApiExtensionAction,
@@ -11,26 +12,10 @@ import type {
 import { extensionConfigFromEnv, extensionConfigFromPairs } from "../../../lib/extensionConfig.js";
 import { loadLocalEnv } from "../../../lib/loadLocalEnv.js";
 
-/** A sample commercetools cart callback payload. */
-function sampleCartInput(
-  action: ApiExtensionAction,
-  sku: string,
-  quantity: number,
-): ApiExtensionInput {
-  // A minimal sample callback for local testing. The real payload is the SDK's
-  // ExtensionInput (resource: a full Cart Reference); we send just the fields a
-  // cart handler reads, cast to the SDK type.
-  return {
-    action,
-    resource: {
-      typeId: "cart",
-      id: "sample-cart",
-      obj: {
-        id: "sample-cart",
-        lineItems: [{ id: "sample-line-item", quantity, variant: { sku } }],
-      },
-    },
-  } as unknown as ApiExtensionInput;
+/** The minimal envelope we read off a resolved payload to route it to handlers. */
+interface ResourceEnvelope {
+  action: string;
+  resource: { typeId: string };
 }
 
 function describeResult(result: ApiExtensionResult): string {
@@ -47,13 +32,12 @@ function describeResult(result: ApiExtensionResult): string {
 
 export default class ExtensionInvokeApiExtension extends Command {
   static override description =
-    "Fire a sample commercetools cart callback at the bundle's API-Extension handlers";
+    "Fire a commercetools API-Extension callback from a supplied payload at the bundle's handlers";
 
   static override examples = [
-    "<%= config.bin %> integration-layer extension invoke-api-extension",
-    "<%= config.bin %> integration-layer extension invoke-api-extension --action Update --sku BLOCKED-SKU",
-    "<%= config.bin %> integration-layer extension invoke-api-extension --quantity 25 --config MAX_LINE_QUANTITY=10",
-    "<%= config.bin %> integration-layer extension invoke-api-extension --config MAX_QTY=5 --config REGION=eu",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --input ./payloads/cart-create.json",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --input ./payloads/order-create.json --key order-tagger",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --all --input ./payload.json --config MAX_QTY=5",
   ];
 
   static override flags = {
@@ -61,20 +45,30 @@ export default class ExtensionInvokeApiExtension extends Command {
       description:
         "dotenv file to load before the command runs (default: .env in the cwd, if present); does not override variables already set in the environment",
     }),
-    entry: Flags.string({ description: "extension entry source file", default: defaultEntry() }),
+    entry: Flags.string({
+      description:
+        "extension entry source file (with --all: the per-package source segment applied under each ./extensions/*)",
+      default: defaultEntry(),
+    }),
     out: Flags.string({ description: "bundle output file", default: defaultOutfile() }),
-    action: Flags.string({
-      description: "the trigger action",
-      options: ["Create", "Update"],
-      default: "Create",
+    all: Flags.boolean({
+      description:
+        "invoke the ONE combined bundle merged from every extension under ./extensions/* (the deployed shape)",
+      default: false,
     }),
-    sku: Flags.string({
-      description: "SKU on the sample cart's line item",
-      default: "BLOCKED-SKU",
+    "extensions-dir": Flags.string({
+      description: "directory holding the extension packages (used with --all)",
+      default: "extensions",
     }),
-    quantity: Flags.integer({
-      description: "quantity on the sample cart's line item",
-      default: 1,
+    input: Flags.string({
+      description:
+        "path to a JSON commercetools ExtensionInput ({ action, resource }) — the callback payload to fire",
+      required: true,
+    }),
+    key: Flags.string({
+      description: "only invoke handlers with this key (repeatable)",
+      multiple: true,
+      delimiter: ",",
     }),
     config: Flags.string({
       description:
@@ -91,6 +85,30 @@ export default class ExtensionInvokeApiExtension extends Command {
     await super.init();
   }
 
+  /** Read and validate the `--input` ExtensionInput JSON file. */
+  private async loadInput(inputPath: string): Promise<ApiExtensionInput> {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await readFile(inputPath, "utf8"));
+    } catch (err) {
+      this.error(`could not read --input '${inputPath}': ${(err as Error).message}`);
+    }
+    const obj = (parsed ?? {}) as Record<string, unknown>;
+    if (typeof obj !== "object" || obj === null) {
+      this.error(`--input '${inputPath}' must be a JSON object`);
+    }
+    const resource = obj.resource as { typeId?: unknown } | undefined;
+    if (!resource || typeof resource !== "object" || typeof resource.typeId !== "string") {
+      this.error(
+        `--input '${inputPath}' must be a commercetools ExtensionInput with a resource object whose typeId is a string`,
+      );
+    }
+    if (typeof obj.action !== "string") {
+      this.error(`--input '${inputPath}' must include a string action`);
+    }
+    return { action: obj.action, resource } as unknown as ApiExtensionInput;
+  }
+
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionInvokeApiExtension);
 
@@ -100,7 +118,18 @@ export default class ExtensionInvokeApiExtension extends Command {
       ...extensionConfigFromPairs(flags.config ?? []),
     };
 
-    const { outfile } = await buildBundle(flags.entry, flags.out);
+    let outfile: string;
+    try {
+      ({ outfile } = await bundleForFlags({
+        all: flags.all,
+        extensionsDir: flags["extensions-dir"],
+        entry: flags.entry,
+        out: flags.out,
+      }));
+    } catch (err) {
+      this.error((err as Error).message);
+    }
+
     const mod = loadBundleSource(await readFile(outfile, "utf8")) as { apiExtensions?: unknown };
     const handlers = Array.isArray(mod.apiExtensions)
       ? (mod.apiExtensions as ApiExtensionDefinition[])
@@ -109,17 +138,28 @@ export default class ExtensionInvokeApiExtension extends Command {
       this.error("this bundle declares no `apiExtensions`.");
     }
 
-    const action = flags.action as ApiExtensionAction;
-    const input = sampleCartInput(action, flags.sku, flags.quantity);
-    const ctx = { now: () => Date.now(), config };
-    this.log(
-      `Invoking ${handlers.length} handler(s) with a ${input.action} on cart ` +
-        `(line item SKU '${flags.sku}' x${flags.quantity})`,
-    );
+    // --key narrows to named handlers. Warn on a key no handler owns, then fail if the
+    // filter leaves nothing to call — a named key that isn't there is a mistake worth surfacing.
+    const wanted = flags.key && flags.key.length > 0 ? new Set(flags.key) : undefined;
+    if (wanted) {
+      const known = new Set(handlers.map((h) => h.key));
+      for (const k of wanted) if (!known.has(k)) this.warn(`no handler with key '${k}' in this bundle`);
+    }
+    const selected = wanted ? handlers.filter((h) => wanted.has(h.key)) : handlers;
+    if (selected.length === 0) {
+      this.error(`no handler matched --key ${[...(wanted ?? [])].join(", ")}`);
+    }
 
-    for (const h of handlers) {
-      if (h.resourceTypeId !== input.resource.typeId || !h.actions.includes(action)) {
-        this.log(`  · ${h.key}: skipped (does not trigger on cart/${action})`);
+    const input = await this.loadInput(flags.input);
+    const { action, resource } = input as unknown as ResourceEnvelope;
+    const resourceType = resource.typeId;
+
+    const ctx = { now: () => Date.now(), config };
+    this.log(`Invoking ${selected.length} handler(s) with a ${action} on ${resourceType}`);
+
+    for (const h of selected) {
+      if (h.resourceTypeId !== resourceType || !h.actions.includes(action as ApiExtensionAction)) {
+        this.log(`  · ${h.key}: skipped (does not trigger on ${resourceType}/${action})`);
         continue;
       }
       const result = await h.handler(input, ctx);
