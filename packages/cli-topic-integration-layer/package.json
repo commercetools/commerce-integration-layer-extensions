@@ -8,8 +8,6 @@
     "url": "git+https://github.com/commercetools/commerce-integration-layer-extensions.git",
     "directory": "packages/cli-topic-integration-layer"
   },
-  "homepage": "https://github.com/commercetools/commerce-integration-layer-extensions/tree/main/packages/cli-topic-integration-layer#readme",
-  "bugs": "https://github.com/commercetools/commerce-integration-layer-extensions/issues",
   "type": "module",
   "main": "./dist/index.js",
   "files": [
