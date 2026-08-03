@@ -5,10 +5,13 @@ import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 import { loadBundleSource } from "../../../lib/tooling/loadBundle.js";
 import type {
   ApiExtensionAction,
-  ApiExtensionDefinition,
   ApiExtensionInput,
-  ApiExtensionResult,
 } from "../../../lib/tooling/apiExtension.js";
+import {
+  describeResult,
+  extractApiExtensions,
+  handlerMatches,
+} from "../../../lib/tooling/apiExtensionDispatch.js";
 import { extensionConfigFromEnv, extensionConfigFromPairs } from "../../../lib/extensionConfig.js";
 import { loadLocalEnv } from "../../../lib/loadLocalEnv.js";
 
@@ -16,18 +19,6 @@ import { loadLocalEnv } from "../../../lib/loadLocalEnv.js";
 interface ResourceEnvelope {
   action: string;
   resource: { typeId: string };
-}
-
-function describeResult(result: ApiExtensionResult): string {
-  if (result && typeof result === "object") {
-    if (Array.isArray(result.errors) && result.errors.length > 0) {
-      return `BLOCK — ${result.errors.map((e) => `${e.code}: ${e.message}`).join("; ")}`;
-    }
-    if (Array.isArray(result.actions) && result.actions.length > 0) {
-      return `MODIFY — ${JSON.stringify(result.actions)}`;
-    }
-  }
-  return "APPROVE";
 }
 
 export default class ExtensionInvokeApiExtension extends Command {
@@ -130,10 +121,7 @@ export default class ExtensionInvokeApiExtension extends Command {
       this.error((err as Error).message);
     }
 
-    const mod = loadBundleSource(await readFile(outfile, "utf8")) as { apiExtensions?: unknown };
-    const handlers = Array.isArray(mod.apiExtensions)
-      ? (mod.apiExtensions as ApiExtensionDefinition[])
-      : [];
+    const handlers = extractApiExtensions(loadBundleSource(await readFile(outfile, "utf8")));
     if (handlers.length === 0) {
       this.error("this bundle declares no `apiExtensions`.");
     }
@@ -158,7 +146,7 @@ export default class ExtensionInvokeApiExtension extends Command {
     this.log(`Invoking ${selected.length} handler(s) with a ${action} on ${resourceType}`);
 
     for (const h of selected) {
-      if (h.resourceTypeId !== resourceType || !h.actions.includes(action as ApiExtensionAction)) {
+      if (!handlerMatches(h, resourceType, action as ApiExtensionAction)) {
         this.log(`  · ${h.key}: skipped (does not trigger on ${resourceType}/${action})`);
         continue;
       }

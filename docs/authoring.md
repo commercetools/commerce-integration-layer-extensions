@@ -319,6 +319,13 @@ restart.
 You can still set them inline on the shell, and `invoke-api-extension` also takes them as
 `--config BLOCKED_SKU=NO-SELL` (repeatable).
 
+For API Extensions specifically, `invoke-api-extension` fires a *synthetic* payload at
+your handlers offline. To debug the **real** flow — a live cart/order write in the Project
+reaching your machine, with a debugger attached — use `serve-api-extension`: it serves the
+handlers over HTTP and registers a commercetools API Extension pointing at a tunnel you
+supply. It refuses to run against a Project that already has an Extension and deletes what
+it registers on exit; see the [CLI reference](cli.md#extension-serve-api-extension).
+
 ### The configuration endpoint
 
 For automation that isn't the CLI, the config API takes any `manage_project` bearer at
