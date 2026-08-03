@@ -1,8 +1,9 @@
 // Low-level HTTP client for the Commerce Integration Layer's per-project manage-surface
-// routes. Every call is parameterised by (baseUrl, projectKey, token) — the command
-// layer resolves those (`IntegrationLayerCommand.resolveIlContext`, whose token is the
-// `commercetools auth login` principal's) and this module just speaks the wire
-// protocol. The route bodies these mirror live in the integration
+// routes. Every call is parameterised by (baseUrl, projectKey, authFetch) — the command
+// layer resolves those (`IntegrationLayerCommand.resolveIlContext`), and this module just
+// speaks the wire protocol. `authFetch` is the `CtpAuthFetchFactory` fetch: it injects the
+// `manage_project` bearer and transparently refreshes/retries it, so nothing here sets an
+// Authorization header itself. The route bodies these mirror live in the integration
 // layer's `routes/manage.ts`; the request/response shapes here are extracted from the
 // `ee-ext` tooling's `remoteValidate.ts` / `push.ts` (which read them from env) and
 // the remaining manage routes (config, status, delete, subgraph).
@@ -81,18 +82,21 @@ function apiRoot(baseUrl: string, projectKey: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(projectKey)}`;
 }
 
-function bearer(token: string): Record<string, string> {
-  return { Authorization: `Bearer ${token}` };
-}
+/**
+ * The authenticated fetch supplied by the command layer — the `CtpAuthFetchFactory` fetch,
+ * which injects the `manage_project` bearer and refreshes/retries it. Structurally a
+ * `fetch`, so callers can pass a plain stub in tests.
+ */
+export type AuthFetch = typeof fetch;
 
 /** GET the project's raw core-subgraph SDL — the compose input (`GET …/subgraph`). */
 export async function fetchSubgraphSdl(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
 ): Promise<string> {
   const url = `${apiRoot(baseUrl, projectKey)}/subgraph`;
-  const res = await fetch(url, { headers: { accept: "text/plain", ...bearer(token) } });
+  const res = await authFetch(url, { headers: { accept: "text/plain" } });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`could not fetch core-subgraph SDL (${res.status}) from ${url}: ${text}`);
@@ -118,10 +122,10 @@ export async function fetchSubgraphSdl(
 export async function fetchDeployedApiSchemaSdl(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
 ): Promise<string> {
   const url = `${apiRoot(baseUrl, projectKey)}/schema/api`;
-  const res = await fetch(url, { headers: { accept: "text/plain", ...bearer(token) } });
+  const res = await authFetch(url, { headers: { accept: "text/plain" } });
   const text = await res.text();
   if (res.status === 404) {
     throw new Error(
@@ -139,13 +143,13 @@ export async function fetchDeployedApiSchemaSdl(
 export async function remoteValidate(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
   typeDefs: string,
 ): Promise<RemoteValidationResult> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/validate`;
-  const res = await fetch(url, {
+  const res = await authFetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...bearer(token) },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ typeDefs }),
   });
   const text = await res.text();
@@ -165,13 +169,13 @@ export async function remoteValidate(
 export async function pushBundle(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
   bundle: string,
   filename: string,
   sourceRevision?: string,
 ): Promise<ExtensionMeta> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/bundle`;
-  const res = await fetch(url, {
+  const res = await authFetch(url, {
     method: "PUT",
     headers: {
       "Content-Type": "text/javascript",
@@ -184,7 +188,6 @@ export async function pushBundle(
       ...(sourceRevision
         ? { "x-extension-source-revision": encodeURIComponent(sourceRevision) }
         : {}),
-      ...bearer(token),
     },
     body: bundle,
   });
@@ -199,10 +202,10 @@ export async function pushBundle(
 export async function fetchExtensionMeta(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
 ): Promise<ExtensionMeta | null> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/bundle/meta`;
-  const res = await fetch(url, { headers: { accept: "application/json", ...bearer(token) } });
+  const res = await authFetch(url, { headers: { accept: "application/json" } });
   if (res.status === 404) return null;
   const text = await res.text();
   if (!res.ok) {
@@ -215,10 +218,10 @@ export async function fetchExtensionMeta(
 export async function deleteExtensionSubgraph(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
 ): Promise<void> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/subgraph`;
-  const res = await fetch(url, { method: "DELETE", headers: { ...bearer(token) } });
+  const res = await authFetch(url, { method: "DELETE" });
   if (!res.ok && res.status !== 204) {
     const text = await res.text();
     throw new Error(`DELETE extension/subgraph failed (${res.status}): ${text}`);
@@ -243,10 +246,10 @@ export interface AllowlistView {
 export async function getAllowlist(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
 ): Promise<AllowlistView> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/allowlist`;
-  const res = await fetch(url, { headers: { accept: "application/json", ...bearer(token) } });
+  const res = await authFetch(url, { headers: { accept: "application/json" } });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`GET extension/allowlist failed (${res.status}): ${text}`);
@@ -265,13 +268,13 @@ export async function getAllowlist(
 export async function putAllowlist(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
   patterns: string[],
 ): Promise<{ allow: string[]; version: number }> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/allowlist`;
-  const res = await fetch(url, {
+  const res = await authFetch(url, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...bearer(token) },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patterns),
   });
   const text = await res.text();
@@ -285,10 +288,10 @@ export async function putAllowlist(
 export async function listConfig(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
 ): Promise<ConfigEntry[]> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/config`;
-  const res = await fetch(url, { headers: { accept: "application/json", ...bearer(token) } });
+  const res = await authFetch(url, { headers: { accept: "application/json" } });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`GET extension/config failed (${res.status}): ${text}`);
@@ -304,13 +307,13 @@ export async function listConfig(
 export async function patchConfig(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
   entries: Array<{ key: string; value: string | null; secret?: boolean }>,
 ): Promise<ConfigEntry[]> {
   const url = `${apiRoot(baseUrl, projectKey)}/extension/config`;
-  const res = await fetch(url, {
+  const res = await authFetch(url, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...bearer(token) },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(entries),
   });
   const text = await res.text();

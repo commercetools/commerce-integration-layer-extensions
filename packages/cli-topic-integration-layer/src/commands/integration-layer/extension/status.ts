@@ -8,8 +8,8 @@ export default class ExtensionStatus extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionStatus);
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
-    const meta = await fetchExtensionMeta(baseUrl, projectKey, token);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
+    const meta = await fetchExtensionMeta(baseUrl, projectKey, authFetch);
     if (!meta) {
       this.log(`No extension bundle is stored for '${projectKey}'.`);
       return;

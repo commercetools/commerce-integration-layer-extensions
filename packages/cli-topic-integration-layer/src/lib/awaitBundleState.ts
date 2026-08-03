@@ -21,7 +21,7 @@
 //   - It doesn't retry transient metadata-read errors into a verdict. A read that
 //     throws ends the wait as `unknown` with the error attached.
 
-import { fetchExtensionMeta, type ExtensionMeta } from "./ilClient.js";
+import { fetchExtensionMeta, type AuthFetch, type ExtensionMeta } from "./ilClient.js";
 
 /** How the wait ended. Only `failed` means "the push produced a broken bundle". */
 export type BundleOutcome =
@@ -53,7 +53,7 @@ const defaultSleep = (ms: number): Promise<void> =>
 export async function awaitBundleState(
   baseUrl: string,
   projectKey: string,
-  token: string,
+  authFetch: AuthFetch,
   version: number,
   options: AwaitOptions,
 ): Promise<BundleOutcome> {
@@ -64,7 +64,7 @@ export async function awaitBundleState(
   for (;;) {
     let meta: ExtensionMeta | null;
     try {
-      meta = await fetchExtensionMeta(baseUrl, projectKey, token);
+      meta = await fetchExtensionMeta(baseUrl, projectKey, authFetch);
     } catch (err) {
       return {
         kind: "unknown",

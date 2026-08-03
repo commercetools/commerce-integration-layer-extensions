@@ -13,9 +13,9 @@ export default class ConfigUnset extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(ConfigUnset);
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
     // A PATCH entry with `value: null` deletes that key (Commerce Integration Layer contract).
-    await patchConfig(baseUrl, projectKey, token, [{ key: args.key, value: null }]);
+    await patchConfig(baseUrl, projectKey, authFetch, [{ key: args.key, value: null }]);
     this.log(`✓ removed '${args.key}' from '${projectKey}'.`);
   }
 }

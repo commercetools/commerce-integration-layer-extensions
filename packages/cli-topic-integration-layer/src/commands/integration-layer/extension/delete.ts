@@ -28,7 +28,7 @@ export default class ExtensionDelete extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionDelete);
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
 
     if (!flags.yes) {
       const confirmed = await confirm(
@@ -40,7 +40,7 @@ export default class ExtensionDelete extends IntegrationLayerCommand {
       }
     }
 
-    await deleteExtensionSubgraph(baseUrl, projectKey, token);
+    await deleteExtensionSubgraph(baseUrl, projectKey, authFetch);
     this.log(`✓ removed the extension subgraph for '${projectKey}'.`);
   }
 }

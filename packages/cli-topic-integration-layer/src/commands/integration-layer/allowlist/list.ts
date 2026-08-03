@@ -9,8 +9,8 @@ export default class AllowlistList extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(AllowlistList);
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
-    const { allow, deny } = await getAllowlist(baseUrl, projectKey, token);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
+    const { allow, deny } = await getAllowlist(baseUrl, projectKey, authFetch);
 
     if (allow.length === 0) {
       this.log(`No allowlisted hosts for '${projectKey}' — the extension's fetch can reach nothing.`);

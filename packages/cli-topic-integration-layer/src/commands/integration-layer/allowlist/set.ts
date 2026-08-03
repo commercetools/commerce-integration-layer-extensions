@@ -38,9 +38,9 @@ export default class AllowlistSet extends IntegrationLayerCommand {
         "At least one host pattern is required. Use 'allowlist remove' to drop individual hosts.",
       );
     }
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
 
-    const { allow: current } = await getAllowlist(baseUrl, projectKey, token);
+    const { allow: current } = await getAllowlist(baseUrl, projectKey, authFetch);
     const confirmed = await confirmAllowlistChange({
       projectKey,
       action: "set",
@@ -55,7 +55,7 @@ export default class AllowlistSet extends IntegrationLayerCommand {
       return;
     }
 
-    const { allow, version } = await putAllowlist(baseUrl, projectKey, token, hosts);
+    const { allow, version } = await putAllowlist(baseUrl, projectKey, authFetch, hosts);
     this.log(`✓ set the allowlist for '${projectKey}' (version ${version}).`);
     this.log(`Allowed hosts: ${allow.join(", ")}`);
   }

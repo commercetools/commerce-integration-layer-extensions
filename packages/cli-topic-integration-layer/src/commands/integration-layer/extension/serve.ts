@@ -233,7 +233,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       const { allow } = await getAllowlist(
         ilContext.baseUrl,
         ilContext.projectKey,
-        ilContext.token,
+        ilContext.authFetch,
       );
       if (allow.length === 0) {
         this.log(
@@ -293,14 +293,14 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     let integrationLayerGraphqlUrl = "";
     let integrationLayerBearer: string | undefined;
     if (withIntegrationLayer) {
-      const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+      const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
       // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the
       // gateway routes to and the /session it mints are on the identity edge, reached via
       // the identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
       const authUrl = this.resolveAuthEdge(flags);
       integrationLayerGraphqlUrl = `${authUrl}/${encodeURIComponent(projectKey)}/graphql`;
       this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
-      integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, token);
+      integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
       if (flags.gateway) {
         integrationLayerBearer = await mintAnonymousSession(authUrl, projectKey);
         this.log("Minted an anonymous session for the gateway.");
@@ -500,14 +500,14 @@ export default class ExtensionServe extends IntegrationLayerCommand {
 
     // Reach the Commerce Integration Layer exactly like --gateway: its core-subgraph SDL is the
     // compose baseline, and an anonymous session authenticates the gateway's calls.
-    const { baseUrl, projectKey, token } = ilContext;
+    const { baseUrl, projectKey, authFetch } = ilContext;
     // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the gateway
     // routes to and the /session it mints are on the identity edge, reached via the
     // identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
     const authUrl = this.resolveAuthEdge(flags);
     const integrationLayerGraphqlUrl = `${authUrl}/${encodeURIComponent(projectKey)}/graphql`;
     this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
-    const integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, token);
+    const integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
     const integrationLayerBearer = await mintAnonymousSession(authUrl, projectKey);
     this.log("Minted an anonymous session for the gateway.");
 

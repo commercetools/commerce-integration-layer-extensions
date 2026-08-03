@@ -1,14 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   authEdgeUrlForRegion,
   edgeUrlForRegion,
   graphqlEdgeUrlForRegion,
-  loadPersistedPrincipal,
 } from "../../src/lib/base.js";
 
 describe("edgeUrlForRegion", () => {
@@ -78,57 +73,5 @@ describe("authEdgeUrlForRegion", () => {
 
   it("returns undefined for an absent region so the command fails loudly", () => {
     expect(authEdgeUrlForRegion("")).toBeUndefined();
-  });
-});
-
-// The regression that motivated reading credentials from disk: when the topic is
-// installed via `oclif plugins install`, it loads its OWN copy of `cli-plugin-auth`,
-// whose in-memory `SecurityContextHolder` static is never filled by the host's
-// `auth login`. Reconstructing the principal from the on-disk credentials file — which
-// `auth login` DID write — sidesteps that duplicate-module split entirely. These tests
-// pin the on-disk contract (path shape, auth id, serialized fields) the host CLI's
-// `providers.ts` defines and that this topic now reads back independently.
-describe("loadPersistedPrincipal", () => {
-  let dir: string;
-  let credentialsFile: string;
-
-  // The exact JSON `auth login` persists for a client-credentials login, mirroring
-  // `CtpClientAuthenticationToken.Serializable.serialize`.
-  const validCredentials = {
-    authentication: "client-credentials",
-    clientId: "client-abc",
-    clientSecret: "secret-xyz",
-    projectKey: "my-project",
-    scope: "manage_project:my-project",
-    region: "eu-central-1.aws",
-    accessToken: "the-access-token",
-    refreshToken: null,
-    issuedAt: 1_700_000_000_000,
-    expiresAt: 1_700_000_172_000,
-  };
-
-  beforeEach(async () => {
-    dir = await mkdtemp(path.join(os.tmpdir(), "il-creds-"));
-    credentialsFile = path.join(dir, "credentials");
-  });
-
-  afterEach(async () => {
-    await rm(dir, { recursive: true, force: true });
-  });
-
-  it("reconstructs the logged-in principal from the credentials file — no network", async () => {
-    await writeFile(credentialsFile, JSON.stringify(validCredentials), "utf8");
-
-    const principal = await loadPersistedPrincipal(credentialsFile);
-
-    // Exactly the fields resolveIlContext / explore read off the principal.
-    expect(principal).toBeDefined();
-    expect(principal?.getAccessToken().getTokenValue()).toBe("the-access-token");
-    expect(principal?.getRegion()).toBe("eu-central-1.aws");
-    expect(principal?.getProjectKey()).toBe("my-project");
-  });
-
-  it("returns undefined when no credentials file exists (so unauthorized commands still run)", async () => {
-    expect(await loadPersistedPrincipal(credentialsFile)).toBeUndefined();
   });
 });

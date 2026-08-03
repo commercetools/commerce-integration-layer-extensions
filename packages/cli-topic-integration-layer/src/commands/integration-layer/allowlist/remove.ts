@@ -37,9 +37,9 @@ export default class AllowlistRemove extends IntegrationLayerCommand {
     const targets = new Set(
       (argv as string[]).map((h) => h.trim().toLowerCase()).filter((h) => h !== ""),
     );
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
 
-    const { allow } = await getAllowlist(baseUrl, projectKey, token);
+    const { allow } = await getAllowlist(baseUrl, projectKey, authFetch);
     const remaining = allow.filter((h) => !targets.has(h.toLowerCase()));
 
     if (remaining.length === allow.length) {
@@ -61,7 +61,7 @@ export default class AllowlistRemove extends IntegrationLayerCommand {
       return;
     }
 
-    const { allow: result, version } = await putAllowlist(baseUrl, projectKey, token, remaining);
+    const { allow: result, version } = await putAllowlist(baseUrl, projectKey, authFetch, remaining);
     this.log(`✓ removed ${[...targets].map((h) => `'${h}'`).join(", ")} from '${projectKey}' (version ${version}).`);
     this.log(result.length > 0 ? `Allowed hosts: ${result.join(", ")}` : "Allowed hosts: (none)");
   }

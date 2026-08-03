@@ -47,6 +47,9 @@
   },
   "oclif": {
     "topicSeparator": " ",
-    "commands": "./dist/commands"
+    "commands": "./dist/commands",
+    "hooks": {
+      "prerun": "./dist/hooks/authentication"
+    }
   }
 }

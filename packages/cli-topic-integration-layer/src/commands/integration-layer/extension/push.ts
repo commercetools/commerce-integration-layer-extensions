@@ -182,13 +182,13 @@ export default class ExtensionPush extends IntegrationLayerCommand {
       throw err;
     }
 
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
 
     // Remote check composes the GraphQL subgraph WITH the Commerce Integration Layer + checks
     // for breaking changes. Only applies when the bundle has a subgraph — an
     // API-extensions-only bundle has no SDL, so skip straight to the upload.
     if (typeDefs !== null) {
-      const remote = await remoteValidate(baseUrl, projectKey, token, typeDefs);
+      const remote = await remoteValidate(baseUrl, projectKey, authFetch, typeDefs);
       const valid = this.reportRemote(remote);
       if (!valid) {
         if (!flags.force) {
@@ -221,7 +221,7 @@ export default class ExtensionPush extends IntegrationLayerCommand {
 
     const url = `${baseUrl}/${encodeURIComponent(projectKey)}/extension/bundle`;
     this.log(`Pushing extension bundle (${bundle.length} bytes) → ${url}`);
-    const meta = await pushBundle(baseUrl, projectKey, token, bundle, filename, sourceRevision);
+    const meta = await pushBundle(baseUrl, projectKey, authFetch, bundle, filename, sourceRevision);
     this.log(`✓ stored revision ${meta.version} (${meta.length} bytes, filename ${meta.filename ?? filename})`);
     if (meta.sourceRevision) {
       this.log(`  built from ${meta.sourceRevision}`);
@@ -235,7 +235,7 @@ export default class ExtensionPush extends IntegrationLayerCommand {
     // version and say so, and fail the command if it couldn't — otherwise a bundle
     // the sandbox refuses to run exits 0 and looks like a successful push.
     this.log(`Waiting for the extension to load version ${meta.version}…`);
-    const outcome = await awaitBundleState(baseUrl, projectKey, token, meta.version, {
+    const outcome = await awaitBundleState(baseUrl, projectKey, authFetch, meta.version, {
       timeoutMs: flags["wait-timeout"] * 1000,
       intervalMs: POLL_INTERVAL_MS,
     });
