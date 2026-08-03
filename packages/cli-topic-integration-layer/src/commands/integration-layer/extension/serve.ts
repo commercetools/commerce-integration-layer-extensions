@@ -43,6 +43,13 @@ import {
   installDelegatingFetch,
   wrapResolverMap,
 } from "../../../lib/tooling/sandboxFetch.js";
+import { extensionConfigFromEnv } from "../../../lib/extensionConfig.js";
+import {
+  parseEnvFile,
+  resolveEnvFileLocation,
+  watchEnvFile,
+  type EnvFileLocation,
+} from "../../../lib/loadLocalEnv.js";
 
 /** The host-mediated capability context the runtime passes a resolver (3rd arg). */
 interface ExtensionContext {
@@ -51,23 +58,13 @@ interface ExtensionContext {
 }
 
 /**
- * Per-project config the runtime injects as `ctx.config`. Locally there is no
- * Commerce Integration Layer to read it from, so it's sourced from `EXTENSION_CONFIG_<KEY>`
- * env vars — e.g. `EXTENSION_CONFIG_ALGOLIA_API_KEY=…` becomes `ctx.config.ALGOLIA_API_KEY`.
+ * Local stand-in for the runtime's per-call context. `config` is the caller's current
+ * `ctx.config` snapshot — sourced from `EXTENSION_CONFIG_*` in the environment and any
+ * `.env` / `--env-file`, and hot-reloaded on file change (see `refreshExtensionConfig`).
+ * There is no Commerce Integration Layer to read the project's stored config from.
  */
-function devConfigFromEnv(): Readonly<Record<string, string>> {
-  const prefix = "EXTENSION_CONFIG_";
-  const config: Record<string, string> = {};
-  for (const [key, value] of Object.entries(process.env)) {
-    if (key.startsWith(prefix) && typeof value === "string") {
-      config[key.slice(prefix.length)] = value;
-    }
-  }
-  return config;
-}
-
-function devContext(): ExtensionContext {
-  return { now: () => Date.now(), config: devConfigFromEnv() };
+function devContext(config: Readonly<Record<string, string>>): ExtensionContext {
+  return { now: () => Date.now(), config };
 }
 
 /** The loaded bundle's federation subgraph schema plus its raw SDL. */
@@ -113,6 +110,60 @@ export default class ExtensionServe extends IntegrationLayerCommand {
   // (and then require a logged-in principal) only when they actually reach the IL.
   // The HTTP allowlist is fetched best-effort when logged in and online.
   protected override authorized = false;
+
+  /**
+   * `EXTENSION_CONFIG_*` taken from the REAL shell, captured in {@link init} before the
+   * base class loads any `.env` into `process.env`. Kept separate so a hot-reload can
+   * preserve "shell wins over file" — the same precedence as Node's `loadEnvFile` and
+   * the rest of the toolchain — instead of letting an edited file shadow an explicit
+   * `EXTENSION_CONFIG_… pnpm dev`.
+   */
+  private shellExtensionConfig: Readonly<Record<string, string>> = {};
+
+  /**
+   * The live `ctx.config` the running server hands resolvers. Recomputed on every
+   * `.env` change; the yoga context factories read it fresh per request, so a reload
+   * applies with no restart.
+   */
+  private currentExtensionConfig: Readonly<Record<string, string>> = {};
+
+  /** Stops watching the `.env` file on shutdown. */
+  private envWatcherClose?: () => void;
+
+  protected override async init(): Promise<void> {
+    // Snapshot the shell's EXTENSION_CONFIG_* BEFORE super.init() (which loads the
+    // `.env` into process.env), so the hot-reload merge below can keep shell precedence.
+    this.shellExtensionConfig = extensionConfigFromEnv({ ...process.env });
+    await super.init();
+  }
+
+  /**
+   * Merge the current `.env` (file) config under the shell config (shell wins) into
+   * {@link currentExtensionConfig}. Called once at startup and again on each file change.
+   */
+  private refreshExtensionConfig(location: EnvFileLocation): void {
+    const fileConfig = extensionConfigFromEnv(parseEnvFile(location.path));
+    this.currentExtensionConfig = { ...fileConfig, ...this.shellExtensionConfig };
+  }
+
+  /**
+   * Wire up local `ctx.config`: compute it from the shell + the resolved `.env`, then
+   * watch that file and hot-reload on change. Shared by both single and `--all` serve.
+   * Returns the startup log line describing what's being watched (if anything).
+   */
+  private startExtensionConfig(): string {
+    const location = resolveEnvFileLocation();
+    this.refreshExtensionConfig(location);
+    this.envWatcherClose = watchEnvFile(location.path, () => {
+      this.refreshExtensionConfig(location);
+      const keys = Object.keys(this.currentExtensionConfig);
+      this.log(
+        `↻ reloaded ${location.path} — ctx.config now has ${keys.length} key(s)` +
+          (keys.length ? `: ${keys.join(", ")}` : ""),
+      );
+    });
+    return `   watching ${location.path} — edit EXTENSION_CONFIG_* to hot-reload ctx.config`;
+  }
 
   static override flags = {
     port: Flags.integer({ char: "p", description: "port to listen on", default: 4000 }),
@@ -217,8 +268,11 @@ export default class ExtensionServe extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionServe);
+    // Compute + start watching local ctx.config before either serve path builds its
+    // server, so the first request already sees it and later edits hot-reload.
+    const envWatchLine = this.startExtensionConfig();
     if (flags.all) {
-      await this.runAll(flags);
+      await this.runAll(flags, envWatchLine);
       return;
     }
     const sandboxFetch = await this.trySandboxFetch(flags);
@@ -328,7 +382,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     // /_extension when the gateway owns /graphql.
     const subgraphYoga = createYoga({
       schema: () => subgraphSchema!,
-      context: () => devContext(),
+      context: () => devContext(this.currentExtensionConfig),
       graphqlEndpoint: subgraphPath,
       landingPage: false,
       maskedErrors: false,
@@ -400,11 +454,13 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       lines.push(`   ${base}/schema.graphql, ${base}/supergraph.graphql — SDL (text)`);
     }
     lines.push(`   open ${base}/graphql in a browser for GraphiQL`);
-    lines.push(`   watching ${entry} — edit and save to hot-reload\n`);
+    lines.push(`   watching ${entry} — edit and save to hot-reload`);
+    lines.push(`${envWatchLine}\n`);
     this.log(lines.join("\n"));
 
     const shutdown = (): void => {
       restoreFetch?.();
+      this.envWatcherClose?.();
       void ctx.dispose();
       server.close(() => process.exit(0));
     };
@@ -426,6 +482,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
    */
   private async runAll(
     flags: { port: number; entry: string; "extensions-dir": string; "auth-url"?: string } & IlFlagValues,
+    envWatchLine: string,
   ): Promise<void> {
     const port = flags.port;
     const root = process.cwd();
@@ -557,7 +614,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     // hot-reload applies with no restart.
     const subgraphYoga = createYoga({
       schema: () => combinedSchema!,
-      context: () => devContext(),
+      context: () => devContext(this.currentExtensionConfig),
       graphqlEndpoint: "/_extension",
       landingPage: false,
       maskedErrors: false,
@@ -626,11 +683,13 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     lines.push(`   ${base}/composed  — full merged schema (browsable; not executable)`);
     lines.push(`   ${base}/schema.graphql, ${base}/supergraph.graphql — SDL (text)`);
     lines.push(`   open ${base}/graphql in a browser for GraphiQL`);
-    lines.push(`   watching ${extensions.length} extension(s) — edit and save to hot-reload\n`);
+    lines.push(`   watching ${extensions.length} extension(s) — edit and save to hot-reload`);
+    lines.push(`${envWatchLine}\n`);
     this.log(lines.join("\n"));
 
     const shutdown = (): void => {
       restoreFetch?.();
+      this.envWatcherClose?.();
       for (const ctx of contexts) void ctx.dispose();
       server.close(() => process.exit(0));
     };

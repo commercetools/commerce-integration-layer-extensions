@@ -119,12 +119,15 @@ the commercetools CLI; `validate` and `push` additionally need
 ## Configuration
 
 Authentication is `commercetools auth login` — there are no credentials in this repo.
-`.env` (copy `.env.example`) holds only optional overrides:
+`.env` (copy `.env.example`) holds only optional overrides. It's loaded automatically
+from the cwd by `extension serve`, `extension invoke-api-extension`, and the
+authenticated commands (or pass `--env-file <path>`); a variable already set in the shell
+always wins:
 
 | Var | What it is |
 | --- | --- |
 | `INTEGRATION_LAYER_URL` | Override the extensions edge. Normally unset — it's derived from your login Region ([details](docs/cli.md#which-host-each-command-talks-to)) |
-| `EXTENSION_CONFIG_<KEY>` | Local-only: feeds `ctx.config.<KEY>` to `serve` and `invoke-api-extension`, which have no Commerce Integration Layer to read config from ([details](docs/authoring.md#local-development)) |
+| `EXTENSION_CONFIG_<KEY>` | Local-only: feeds `ctx.config.<KEY>` to `serve` and `invoke-api-extension`, which have no Commerce Integration Layer to read config from. `serve` hot-reloads edits ([details](docs/authoring.md#local-development)) |
 
 To target another Project, log in with a different `--project-key`, or pass
 `--project-key` to a command. `.env` is gitignored.

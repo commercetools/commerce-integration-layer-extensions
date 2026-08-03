@@ -36,6 +36,7 @@ import {
   CtpClientAuthenticationToken,
   FileBasedAuthenticationRepository,
 } from "@commercetools/cli-plugin-auth";
+import { loadLocalEnv } from "./loadLocalEnv.js";
 
 /**
  * Where `commercetools auth login` persists the serialized principal, and the auth id
@@ -153,6 +154,11 @@ export abstract class IntegrationLayerCommand extends AuthCommand {
   private persistedPrincipal?: CtpAuthorizedClient;
 
   static override baseFlags = {
+    "env-file": Flags.string({
+      description:
+        "dotenv file to load before the command runs (default: .env in the cwd, if present); does not override variables already set in the environment",
+      helpGroup: "GLOBAL",
+    }),
     "integration-layer-url": Flags.string({
       description:
         "integration-layer extensions edge base URL (also settable via INTEGRATION_LAYER_URL); overrides the URL derived from your login region",
@@ -166,6 +172,9 @@ export abstract class IntegrationLayerCommand extends AuthCommand {
   };
 
   protected override async init(): Promise<void> {
+    // Before oclif resolves flag `env:` bindings (and before `serve` reads
+    // EXTENSION_CONFIG_*), so a project `.env` / `--env-file` actually takes effect.
+    loadLocalEnv();
     await super.init();
     this.persistedPrincipal = await this.loadPersistedPrincipal();
     if (this.authorized) this.requirePrincipal();
