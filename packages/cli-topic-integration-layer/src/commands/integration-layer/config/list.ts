@@ -8,8 +8,8 @@ export default class ConfigList extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(ConfigList);
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
-    const entries = await listConfig(baseUrl, projectKey, token);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
+    const entries = await listConfig(baseUrl, projectKey, authFetch);
     if (entries.length === 0) {
       this.log(`No extension config entries for '${projectKey}'.`);
       return;

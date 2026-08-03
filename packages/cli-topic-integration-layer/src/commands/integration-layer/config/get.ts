@@ -13,8 +13,8 @@ export default class ConfigGet extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(ConfigGet);
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
-    const entries = await listConfig(baseUrl, projectKey, token);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
+    const entries = await listConfig(baseUrl, projectKey, authFetch);
     const entry = entries.find((e) => e.key === args.key);
     if (!entry) {
       this.error(`No config entry '${args.key}' for '${projectKey}'.`);

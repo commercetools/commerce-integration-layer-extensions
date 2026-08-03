@@ -25,9 +25,9 @@ export default class AllowlistAdd extends IntegrationLayerCommand {
   async run(): Promise<void> {
     const { argv, flags } = await this.parse(AllowlistAdd);
     const hosts = (argv as string[]).map((h) => h.trim()).filter((h) => h !== "");
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
 
-    const { allow } = await getAllowlist(baseUrl, projectKey, token);
+    const { allow } = await getAllowlist(baseUrl, projectKey, authFetch);
     // Existing entries are stored lowercased; compare case-insensitively so we don't
     // re-send a host that's already there (the Commerce Integration Layer would de-dupe anyway).
     const existing = new Set(allow.map((h) => h.toLowerCase()));
@@ -39,7 +39,7 @@ export default class AllowlistAdd extends IntegrationLayerCommand {
     }
 
     // The Commerce Integration Layer validates + normalizes (lowercase, de-dupe) on write.
-    const { allow: result, version } = await putAllowlist(baseUrl, projectKey, token, [
+    const { allow: result, version } = await putAllowlist(baseUrl, projectKey, authFetch, [
       ...allow,
       ...added,
     ]);

@@ -101,8 +101,8 @@ export default class ExtensionValidate extends IntegrationLayerCommand {
       return;
     }
 
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
-    const result = await remoteValidate(baseUrl, projectKey, token, typeDefs);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
+    const result = await remoteValidate(baseUrl, projectKey, authFetch, typeDefs);
     if (!this.reportRemote(result)) this.error("remote validation failed.");
   }
 }

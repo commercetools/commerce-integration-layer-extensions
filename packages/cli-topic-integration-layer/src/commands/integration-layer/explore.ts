@@ -97,7 +97,7 @@ export default class Explore extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(Explore);
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
     const principal = this.requirePrincipal();
 
     // The three edges are distinct hosts in the deployed topology (extensions./
@@ -118,7 +118,7 @@ export default class Explore extends IntegrationLayerCommand {
       );
     }
 
-    const resolved = await this.resolveSchema(flags.deployed, baseUrl, projectKey, token);
+    const resolved = await this.resolveSchema(flags.deployed, baseUrl, projectKey, authFetch);
     const grant = await this.resolveGrant(flags.as);
     const session = await mintSession(authUrl, projectKey, grant, {
       locale: flags.locale,
@@ -172,14 +172,14 @@ export default class Explore extends IntegrationLayerCommand {
     deployed: boolean,
     baseUrl: string,
     projectKey: string,
-    token: string,
+    authFetch: typeof fetch,
   ): Promise<ExplorerSchema> {
     if (deployed) {
       this.log(`Fetching the deployed composed schema for '${projectKey}' …`);
       // Already a public API schema — the Commerce Integration Layer reduces it before
       // sending, so there is no supergraph to unpick here. (The LOCAL path below
       // still composes, which is why this command keeps a composition dependency.)
-      const apiSdl = await fetchDeployedApiSchemaSdl(baseUrl, projectKey, token);
+      const apiSdl = await fetchDeployedApiSchemaSdl(baseUrl, projectKey, authFetch);
       return {
         schema: buildSchema(apiSdl),
         sdl: apiSdl,
@@ -188,7 +188,7 @@ export default class Explore extends IntegrationLayerCommand {
     }
 
     this.log(`Fetching the core-subgraph SDL for '${projectKey}' …`);
-    const coreSdl = await fetchSubgraphSdl(baseUrl, projectKey, token);
+    const coreSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
 
     // An extension in the working directory is composed in, so your own fields show
     // up before you have pushed anything. No extension here → core only.

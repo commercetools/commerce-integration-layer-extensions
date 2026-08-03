@@ -17,7 +17,9 @@ import type { ExtensionMeta } from "../../src/lib/ilClient.js";
 
 const BASE = "https://il.test";
 const PROJECT = "demo-project";
-const TOKEN = "t";
+// fetchExtensionMeta is mocked below, so this is never invoked — it only satisfies the
+// authenticated-fetch parameter type.
+const AUTH_FETCH = (async () => new Response()) as unknown as typeof fetch;
 
 function meta(over: Partial<ExtensionMeta> = {}): ExtensionMeta {
   return {
@@ -77,7 +79,7 @@ describe("awaitBundleState", () => {
       meta({ state: "running", served: { version: 7, sourceRevision: "1a2b3c4" } }),
     ]);
 
-    const outcome = await awaitBundleState(BASE, PROJECT, TOKEN, 7, { ...OPTS, ...c });
+    const outcome = await awaitBundleState(BASE, PROJECT, AUTH_FETCH, 7, { ...OPTS, ...c });
 
     expect(outcome.kind).toBe("running");
     // It polled rather than giving up on the first pending read.
@@ -97,7 +99,7 @@ describe("awaitBundleState", () => {
       }),
     ]);
 
-    const outcome = await awaitBundleState(BASE, PROJECT, TOKEN, 7, { ...OPTS, ...c });
+    const outcome = await awaitBundleState(BASE, PROJECT, AUTH_FETCH, 7, { ...OPTS, ...c });
 
     // Both builds are carried through, each with its commit — push renders them.
     expect(outcome).toMatchObject({
@@ -115,7 +117,7 @@ describe("awaitBundleState", () => {
     // `state` absent entirely — an older deployment.
     fetchExtensionMetaMock = stubMeta([{ ...meta(), state: undefined }]);
 
-    const outcome = await awaitBundleState(BASE, PROJECT, TOKEN, 7, { ...OPTS, ...c });
+    const outcome = await awaitBundleState(BASE, PROJECT, AUTH_FETCH, 7, { ...OPTS, ...c });
 
     expect(outcome.kind).toBe("unknown");
     // Answered on the first read — there is nothing to wait for.
@@ -126,7 +128,7 @@ describe("awaitBundleState", () => {
     const c = clock();
     fetchExtensionMetaMock = stubMeta([meta({ state: "pending" })]);
 
-    const outcome = await awaitBundleState(BASE, PROJECT, TOKEN, 7, {
+    const outcome = await awaitBundleState(BASE, PROJECT, AUTH_FETCH, 7, {
       timeoutMs: 20_000,
       intervalMs: 5000,
       ...c,
@@ -144,7 +146,7 @@ describe("awaitBundleState", () => {
     const c = clock();
     fetchExtensionMetaMock = stubMeta([meta({ version: 8, state: "running" })]);
 
-    const outcome = await awaitBundleState(BASE, PROJECT, TOKEN, 7, { ...OPTS, ...c });
+    const outcome = await awaitBundleState(BASE, PROJECT, AUTH_FETCH, 7, { ...OPTS, ...c });
 
     // We must not report someone else's push as our result — in either direction.
     expect(outcome).toMatchObject({ kind: "superseded", meta: { version: 8 } });
@@ -156,7 +158,7 @@ describe("awaitBundleState", () => {
       throw new Error("connect ECONNREFUSED");
     });
 
-    const outcome = await awaitBundleState(BASE, PROJECT, TOKEN, 7, { ...OPTS, ...c });
+    const outcome = await awaitBundleState(BASE, PROJECT, AUTH_FETCH, 7, { ...OPTS, ...c });
 
     expect(outcome.kind).toBe("unknown");
     if (outcome.kind === "unknown") {
@@ -168,7 +170,7 @@ describe("awaitBundleState", () => {
     const c = clock();
     fetchExtensionMetaMock = stubMeta([null]);
 
-    const outcome = await awaitBundleState(BASE, PROJECT, TOKEN, 7, { ...OPTS, ...c });
+    const outcome = await awaitBundleState(BASE, PROJECT, AUTH_FETCH, 7, { ...OPTS, ...c });
 
     expect(outcome.kind).toBe("unknown");
   });

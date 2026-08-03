@@ -24,8 +24,8 @@ export default class ConfigSet extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(ConfigSet);
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
-    await patchConfig(baseUrl, projectKey, token, [
+    const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
+    await patchConfig(baseUrl, projectKey, authFetch, [
       { key: args.key, value: args.value, secret: flags.secret },
     ]);
     this.log(`✓ set '${args.key}'${flags.secret ? " (secret)" : ""} for '${projectKey}'.`);

@@ -3,8 +3,8 @@
 //
 // `composeWithIntegrationLayer` below is the low-level half. Fetching the project's
 // subgraph SDL is a plain authenticated HTTP call, so it lives separately in
-// `../ilClient.ts`, parameterised by (baseUrl, projectKey, token) with the command
-// layer supplying the token.
+// `../ilClient.ts`, parameterised by (baseUrl, projectKey, authFetch) with the command
+// layer supplying the authenticated fetch.
 
 import { parse, printSchema, type GraphQLSchema } from "graphql";
 import { composeServices } from "@apollo/composition";
