@@ -18,26 +18,6 @@ interface ResourceEnvelope {
   resource: { typeId: string };
 }
 
-/**
- * A minimal sample callback payload for a resource type. `cart` gets a single line item
- * (so the cart examples have something to act on); every other type gets a bare
- * `{ id, obj: { id } }` — enough to reach a handler. A realistic payload comes via
- * `--input`; this is the zero-config convenience for the common cart case.
- */
-function sampleInput(
-  resourceType: string,
-  action: string,
-  sku: string,
-  quantity: number,
-): ApiExtensionInput {
-  const id = `sample-${resourceType}`;
-  const obj =
-    resourceType === "cart"
-      ? { id, lineItems: [{ id: "sample-line-item", quantity, variant: { sku } }] }
-      : { id };
-  return { action, resource: { typeId: resourceType, id, obj } } as unknown as ApiExtensionInput;
-}
-
 function describeResult(result: ApiExtensionResult): string {
   if (result && typeof result === "object") {
     if (Array.isArray(result.errors) && result.errors.length > 0) {
@@ -52,15 +32,12 @@ function describeResult(result: ApiExtensionResult): string {
 
 export default class ExtensionInvokeApiExtension extends Command {
   static override description =
-    "Fire a commercetools API-Extension callback (a built-in sample or a supplied payload) at the bundle's handlers";
+    "Fire a commercetools API-Extension callback from a supplied payload at the bundle's handlers";
 
   static override examples = [
-    "<%= config.bin %> integration-layer extension invoke-api-extension",
-    "<%= config.bin %> integration-layer extension invoke-api-extension --action Update --sku BLOCKED-SKU",
-    "<%= config.bin %> integration-layer extension invoke-api-extension --resource-type order --action Create",
-    "<%= config.bin %> integration-layer extension invoke-api-extension --input ./payloads/order-create.json",
-    "<%= config.bin %> integration-layer extension invoke-api-extension --key my-handler --input ./payload.json",
-    "<%= config.bin %> integration-layer extension invoke-api-extension --all --config MAX_QTY=5",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --input ./payloads/cart-create.json",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --input ./payloads/order-create.json --key order-tagger",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --all --input ./payload.json --config MAX_QTY=5",
   ];
 
   static override flags = {
@@ -83,31 +60,15 @@ export default class ExtensionInvokeApiExtension extends Command {
       description: "directory holding the extension packages (used with --all)",
       default: "extensions",
     }),
-    action: Flags.string({
-      description: "the trigger action (also fills the action when --input omits one)",
-      options: ["Create", "Update"],
-      default: "Create",
-    }),
-    "resource-type": Flags.string({
-      description: "commercetools resource the sample callback targets (e.g. cart, order, payment)",
-      default: "cart",
-    }),
     input: Flags.string({
       description:
-        "path to a JSON commercetools ExtensionInput ({ action, resource }, or a bare resource) — call any handler with a real payload; overrides --resource-type/--sku/--quantity",
+        "path to a JSON commercetools ExtensionInput ({ action, resource }) — the callback payload to fire",
+      required: true,
     }),
     key: Flags.string({
       description: "only invoke handlers with this key (repeatable)",
       multiple: true,
       delimiter: ",",
-    }),
-    sku: Flags.string({
-      description: "SKU on the sample cart's line item (cart sample only)",
-      default: "BLOCKED-SKU",
-    }),
-    quantity: Flags.integer({
-      description: "quantity on the sample cart's line item (cart sample only)",
-      default: 1,
     }),
     config: Flags.string({
       description:
@@ -124,39 +85,28 @@ export default class ExtensionInvokeApiExtension extends Command {
     await super.init();
   }
 
-  /**
-   * The payload to hand the handlers: a supplied `--input` JSON file (a full
-   * `{ action, resource }` ExtensionInput, or a bare resource object — the action then
-   * comes from `--action`), otherwise the built-in sample for `--resource-type`.
-   */
-  private async resolveInput(flags: {
-    input?: string;
-    action: string;
-    "resource-type": string;
-    sku: string;
-    quantity: number;
-  }): Promise<ApiExtensionInput> {
-    if (!flags.input) {
-      return sampleInput(flags["resource-type"], flags.action, flags.sku, flags.quantity);
-    }
+  /** Read and validate the `--input` ExtensionInput JSON file. */
+  private async loadInput(inputPath: string): Promise<ApiExtensionInput> {
     let parsed: unknown;
     try {
-      parsed = JSON.parse(await readFile(flags.input, "utf8"));
+      parsed = JSON.parse(await readFile(inputPath, "utf8"));
     } catch (err) {
-      this.error(`could not read --input '${flags.input}': ${(err as Error).message}`);
+      this.error(`could not read --input '${inputPath}': ${(err as Error).message}`);
     }
     const obj = (parsed ?? {}) as Record<string, unknown>;
-    const resource = (typeof obj === "object" && "resource" in obj ? obj.resource : obj) as
-      | { typeId?: unknown }
-      | undefined;
+    if (typeof obj !== "object" || obj === null) {
+      this.error(`--input '${inputPath}' must be a JSON object`);
+    }
+    const resource = obj.resource as { typeId?: unknown } | undefined;
     if (!resource || typeof resource !== "object" || typeof resource.typeId !== "string") {
       this.error(
-        `--input '${flags.input}' must be a commercetools ExtensionInput: a { action, resource } object ` +
-          "(or a bare resource) whose resource has a string typeId",
+        `--input '${inputPath}' must be a commercetools ExtensionInput with a resource object whose typeId is a string`,
       );
     }
-    const action = typeof obj.action === "string" ? obj.action : flags.action;
-    return { action, resource } as unknown as ApiExtensionInput;
+    if (typeof obj.action !== "string") {
+      this.error(`--input '${inputPath}' must include a string action`);
+    }
+    return { action: obj.action, resource } as unknown as ApiExtensionInput;
   }
 
   async run(): Promise<void> {
@@ -200,16 +150,12 @@ export default class ExtensionInvokeApiExtension extends Command {
       this.error(`no handler matched --key ${[...(wanted ?? [])].join(", ")}`);
     }
 
-    const input = await this.resolveInput(flags);
+    const input = await this.loadInput(flags.input);
     const { action, resource } = input as unknown as ResourceEnvelope;
     const resourceType = resource.typeId;
 
     const ctx = { now: () => Date.now(), config };
-    const detail =
-      resourceType === "cart" && !flags.input
-        ? ` (line item SKU '${flags.sku}' x${flags.quantity})`
-        : "";
-    this.log(`Invoking ${selected.length} handler(s) with a ${action} on ${resourceType}${detail}`);
+    this.log(`Invoking ${selected.length} handler(s) with a ${action} on ${resourceType}`);
 
     for (const h of selected) {
       if (h.resourceTypeId !== resourceType || !h.actions.includes(action as ApiExtensionAction)) {

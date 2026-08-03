@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "commercetools integration-layer extension build",
-    "dev": "commercetools integration-layer extension invoke-api-extension --quantity 25 --config MAX_LINE_QUANTITY=10",
+    "dev": "commercetools integration-layer extension invoke-api-extension --input ./payloads/cart-create-over-cap.json --config MAX_LINE_QUANTITY=10",
     "validate": "commercetools integration-layer extension validate",
     "push": "commercetools integration-layer extension push",
     "typecheck": "tsc --noEmit"

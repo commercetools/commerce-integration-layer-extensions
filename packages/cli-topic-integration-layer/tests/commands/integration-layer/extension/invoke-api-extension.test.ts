@@ -14,6 +14,31 @@ async function bundleFlags(source: string): Promise<string[]> {
   return ["--entry", entry, "--out", join(dir, "dist", "extension.js")];
 }
 
+/** Write a commercetools ExtensionInput JSON file; return its path. */
+async function writeInput(
+  dirPrefix: string,
+  input: { action: string; resource: { typeId: string; id: string; obj: unknown } },
+): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), dirPrefix));
+  const inputPath = join(dir, "input.json");
+  await writeFile(inputPath, JSON.stringify(input), "utf8");
+  return inputPath;
+}
+
+function cartInput(quantity: number, sku = "BLOCKED-SKU") {
+  return {
+    action: "Create",
+    resource: {
+      typeId: "cart",
+      id: "sample-cart",
+      obj: {
+        id: "sample-cart",
+        lineItems: [{ id: "sample-line-item", quantity, variant: { sku } }],
+      },
+    },
+  };
+}
+
 /** A handler in the shape `examples/cart-quantity-cap` ships: cap, don't block. */
 const QUANTITY_CAP = `
   export const apiExtensions = [
@@ -35,38 +60,40 @@ const QUANTITY_CAP = `
 `;
 
 describe("integration-layer extension invoke-api-extension", () => {
-  it("puts --quantity on the sample cart's line item, so a cap handler modifies it", async () => {
+  it("modifies a cart line item when quantity exceeds the configured cap", async () => {
     const flags = await bundleFlags(QUANTITY_CAP);
+    const inputPath = await writeInput("il-cli-invoke-cart-", cartInput(25));
     const { stdout } = await captureOutput(
       async () =>
-        ExtensionInvokeApiExtension.run([...flags, "--quantity", "25", "--config", "MAX_LINE_QUANTITY=10"]),
+        ExtensionInvokeApiExtension.run([
+          ...flags,
+          "--input",
+          inputPath,
+          "--config",
+          "MAX_LINE_QUANTITY=10",
+        ]),
       { print: false },
     );
 
-    expect(stdout).toContain("x25"); // the sample line reports the requested quantity
     expect(stdout).toContain("MODIFY");
     expect(stdout).toContain("changeLineItemQuantity");
   });
 
-  it("approves when the sample quantity is under the cap", async () => {
+  it("approves when the cart quantity is under the cap", async () => {
     const flags = await bundleFlags(QUANTITY_CAP);
+    const inputPath = await writeInput("il-cli-invoke-cart-", cartInput(2));
     const { stdout } = await captureOutput(
       async () =>
-        ExtensionInvokeApiExtension.run([...flags, "--quantity", "2", "--config", "MAX_LINE_QUANTITY=10"]),
+        ExtensionInvokeApiExtension.run([
+          ...flags,
+          "--input",
+          inputPath,
+          "--config",
+          "MAX_LINE_QUANTITY=10",
+        ]),
       { print: false },
     );
 
-    expect(stdout).toContain("APPROVE");
-  });
-
-  it("defaults the sample quantity to 1", async () => {
-    const flags = await bundleFlags(QUANTITY_CAP);
-    const { stdout } = await captureOutput(
-      async () => ExtensionInvokeApiExtension.run([...flags, "--config", "MAX_LINE_QUANTITY=10"]),
-      { print: false },
-    );
-
-    expect(stdout).toContain("x1");
     expect(stdout).toContain("APPROVE");
   });
 });
@@ -82,10 +109,14 @@ const MIXED = `
 `;
 
 describe("integration-layer extension invoke-api-extension — any resource type", () => {
-  it("targets a non-cart resource via --resource-type and skips handlers that don't trigger", async () => {
+  it("invokes a matching handler and skips handlers that do not trigger", async () => {
     const flags = await bundleFlags(MIXED);
+    const inputPath = await writeInput("il-cli-invoke-order-", {
+      action: "Create",
+      resource: { typeId: "order", id: "o-42", obj: { id: "o-42" } },
+    });
     const { stdout } = await captureOutput(
-      async () => ExtensionInvokeApiExtension.run([...flags, "--resource-type", "order"]),
+      async () => ExtensionInvokeApiExtension.run([...flags, "--input", inputPath]),
       { print: false },
     );
 
@@ -95,35 +126,17 @@ describe("integration-layer extension invoke-api-extension — any resource type
     expect(stdout).toContain("cart-guard: skipped");
   });
 
-  it("drives a handler from a supplied --input ExtensionInput file", async () => {
-    const flags = await bundleFlags(MIXED);
-    const dir = await mkdtemp(join(tmpdir(), "il-cli-invoke-input-"));
-    const inputPath = join(dir, "order.json");
-    await writeFile(
-      inputPath,
-      JSON.stringify({ action: "Create", resource: { typeId: "order", id: "o-42", obj: { id: "o-42" } } }),
-      "utf8",
-    );
-
-    const { stdout } = await captureOutput(
-      async () => ExtensionInvokeApiExtension.run([...flags, "--input", inputPath]),
-      { print: false },
-    );
-
-    expect(stdout).toContain("on order");
-    expect(stdout).toContain("seen-o-42"); // the handler read the id from OUR payload
-  });
-
   it("restricts invocation to --key handlers", async () => {
     const flags = await bundleFlags(MIXED);
+    const inputPath = await writeInput("il-cli-invoke-cart-", cartInput(1));
     const { stdout } = await captureOutput(
-      async () => ExtensionInvokeApiExtension.run([...flags, "--key", "cart-guard"]),
+      async () => ExtensionInvokeApiExtension.run([...flags, "--input", inputPath, "--key", "cart-guard"]),
       { print: false },
     );
 
     expect(stdout).toContain("Invoking 1 handler(s)");
     expect(stdout).toContain("cart-guard: BLOCK");
-    expect(stdout).not.toContain("order-tagger"); // filtered out entirely, not even a skip line
+    expect(stdout).not.toContain("order-tagger");
   });
 
   it("errors when --input is not a valid ExtensionInput", async () => {
@@ -137,6 +150,23 @@ describe("integration-layer extension invoke-api-extension — any resource type
       { print: false },
     );
     expect(error?.message).toMatch(/ExtensionInput/);
+  });
+
+  it("errors when --input omits action", async () => {
+    const flags = await bundleFlags(MIXED);
+    const dir = await mkdtemp(join(tmpdir(), "il-cli-invoke-no-action-"));
+    const inputPath = join(dir, "resource-only.json");
+    await writeFile(
+      inputPath,
+      JSON.stringify({ resource: { typeId: "order", id: "o-1", obj: { id: "o-1" } } }),
+      "utf8",
+    );
+
+    const { error } = await captureOutput(
+      async () => ExtensionInvokeApiExtension.run([...flags, "--input", inputPath]),
+      { print: false },
+    );
+    expect(error?.message).toMatch(/action/);
   });
 });
 
@@ -165,13 +195,20 @@ describe("integration-layer extension invoke-api-extension — --all", () => {
       ];`,
     );
 
+    const inputPath = await writeInput("il-cli-invoke-all-input-", cartInput(1));
     process.chdir(root);
     const { stdout } = await captureOutput(
-      async () => ExtensionInvokeApiExtension.run(["--all", "--out", join(root, "dist", "extension.js")]),
+      async () =>
+        ExtensionInvokeApiExtension.run([
+          "--all",
+          "--out",
+          join(root, "dist", "extension.js"),
+          "--input",
+          inputPath,
+        ]),
       { print: false },
     );
 
-    // Both extensions' cart handlers are concatenated into the one deployed bundle.
     expect(stdout).toContain("Invoking 2 handler(s)");
     expect(stdout).toContain("cart-guard: BLOCK");
     expect(stdout).toContain("cart-tagger: MODIFY");
@@ -191,9 +228,10 @@ describe("integration-layer extension invoke-api-extension — ctx.config from t
 
   it("reads EXTENSION_CONFIG_* from the environment when --config is omitted", async () => {
     const flags = await bundleFlags(QUANTITY_CAP);
+    const inputPath = await writeInput("il-cli-invoke-env-", cartInput(25));
     process.env.EXTENSION_CONFIG_MAX_LINE_QUANTITY = "10";
     const { stdout } = await captureOutput(
-      async () => ExtensionInvokeApiExtension.run([...flags, "--quantity", "25"]),
+      async () => ExtensionInvokeApiExtension.run([...flags, "--input", inputPath]),
       { print: false },
     );
     expect(stdout).toContain("MODIFY");
@@ -201,22 +239,30 @@ describe("integration-layer extension invoke-api-extension — ctx.config from t
 
   it("lets an explicit --config override EXTENSION_CONFIG_* from the environment", async () => {
     const flags = await bundleFlags(QUANTITY_CAP);
-    process.env.EXTENSION_CONFIG_MAX_LINE_QUANTITY = "100"; // cap 100 alone would APPROVE x25
+    const inputPath = await writeInput("il-cli-invoke-env-", cartInput(25));
+    process.env.EXTENSION_CONFIG_MAX_LINE_QUANTITY = "100";
     const { stdout } = await captureOutput(
       async () =>
-        ExtensionInvokeApiExtension.run([...flags, "--quantity", "25", "--config", "MAX_LINE_QUANTITY=10"]),
+        ExtensionInvokeApiExtension.run([
+          ...flags,
+          "--input",
+          inputPath,
+          "--config",
+          "MAX_LINE_QUANTITY=10",
+        ]),
       { print: false },
     );
-    expect(stdout).toContain("MODIFY"); // --config cap 10 wins → x25 is over
+    expect(stdout).toContain("MODIFY");
   });
 
   it("auto-loads a .env from the cwd (no --config)", async () => {
     const flags = await bundleFlags(QUANTITY_CAP);
+    const inputPath = await writeInput("il-cli-invoke-env-", cartInput(25));
     envDir = await mkdtemp(join(tmpdir(), "il-cli-invoke-env-"));
     await writeFile(join(envDir, ".env"), "EXTENSION_CONFIG_MAX_LINE_QUANTITY=10\n", "utf8");
     process.chdir(envDir);
     const { stdout } = await captureOutput(
-      async () => ExtensionInvokeApiExtension.run([...flags, "--quantity", "25"]),
+      async () => ExtensionInvokeApiExtension.run([...flags, "--input", inputPath]),
       { print: false },
     );
     expect(stdout).toContain("MODIFY");

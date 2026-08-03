@@ -17,8 +17,8 @@
  * when unset it falls back to the constant below.
  *
  * Try it locally without deploying:  `pnpm dev`  (→ `commercetools integration-layer
- * extension invoke-api-extension`) fires a sample cart at the handler. Add `--sku OTHER` to send a
- * different SKU and watch it pass. Then `pnpm validate` / `pnpm push`.
+ * extension invoke-api-extension --input ./payloads/cart-create-blocked-sku.json`).
+ * Edit the payload SKU to watch a non-blocked line pass. Then `pnpm validate` / `pnpm push`.
  *
  * A handler returns the plain runtime contract: `{}` to approve, `{ errors: [...] }`
  * to block, or `{ actions: [...] }` to modify — no imports from the CLI needed.

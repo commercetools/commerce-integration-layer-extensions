@@ -1,0 +1,17 @@
+{
+  "action": "Create",
+  "resource": {
+    "typeId": "cart",
+    "id": "sample-cart",
+    "obj": {
+      "id": "sample-cart",
+      "lineItems": [
+        {
+          "id": "sample-line-item",
+          "quantity": 1,
+          "variant": { "sku": "BLOCKED-SKU" }
+        }
+      ]
+    }
+  }
+}

@@ -271,8 +271,7 @@ Removes the extension subgraph from the Project's published graph. Prompts unles
 ### `extension invoke-api-extension`
 
 ```
-commercetools integration-layer extension invoke-api-extension [--resource-type cart|order|…] [--action Create|Update]
-                                                               [--input file.json] [--key k]... [--sku s] [--quantity n]
+commercetools integration-layer extension invoke-api-extension --input file.json [--key k]...
                                                                [--all] [--config KEY=VALUE]... [--env-file path]
 ```
 
@@ -280,32 +279,23 @@ Fires a commercetools callback at the bundle's [API-Extension][apiext] handlers 
 prints each decision — `APPROVE`, `MODIFY` with the actions, or the blocking errors. No
 deploy, no credentials, fully offline.
 
-The payload is either a **built-in sample** for `--resource-type` (default `cart`, which
-also carries the `--sku`/`--quantity` line item) or a **supplied `--input`** JSON file —
-a commercetools `ExtensionInput` (`{ action, resource }`, or a bare resource, in which
-case `--action` fills the action). `--input` is how you exercise *any* handler with a
-realistic payload; it overrides `--resource-type`/`--sku`/`--quantity`. A handler fires
-only when its `resourceTypeId` and `actions` match the payload — others are reported as
-skipped. `--key` (repeatable) restricts invocation to named handlers. `ctx.config` comes
-from `EXTENSION_CONFIG_*` in the environment / `.env` / `--env-file`; a `--config` entry
-overrides the same key.
+`--input` is required: a JSON commercetools `ExtensionInput` with both `action` and
+`resource` (including `resource.typeId`). A handler fires only when its `resourceTypeId`
+and `actions` match the payload — others are reported as skipped. `--key` (repeatable)
+restricts invocation to named handlers. `ctx.config` comes from `EXTENSION_CONFIG_*` in
+the environment / `.env` / `--env-file`; a `--config` entry overrides the same key.
 
 | Flag | Default |
 | --- | --- |
-| `--resource-type` | `cart` — the resource the sample callback targets |
-| `--action` | `Create` (or `Update`); fills the action when `--input` omits one |
-| `--input` | — path to a JSON `ExtensionInput`; overrides the sample flags |
+| `--input` | **required** — path to a JSON `ExtensionInput` (`{ action, resource }`) |
 | `--key` | — repeatable; only invoke handlers with these keys |
-| `--sku` | `BLOCKED-SKU` — the SKU on the sample cart line item |
-| `--quantity` | `1` — the quantity on the sample cart line item |
 | `--all`, `--extensions-dir` | invoke the merged bundle — see [`--all`](#one-bundle-per-project-and---all) |
 | `--config` | repeatable `KEY=VALUE`, becomes `ctx.config` (overrides env / `.env`) |
 | `--env-file` | optional dotenv path (default: load `.env` from cwd if present) |
 
 ```bash
-commercetools integration-layer extension invoke-api-extension --sku ALLOWED
-commercetools integration-layer extension invoke-api-extension --quantity 25 --config MAX_LINE_QUANTITY=10
-commercetools integration-layer extension invoke-api-extension --resource-type order --action Create
+commercetools integration-layer extension invoke-api-extension --input ./payloads/cart-create.json
+commercetools integration-layer extension invoke-api-extension --input ./payloads/cart-update.json --config MAX_LINE_QUANTITY=10
 commercetools integration-layer extension invoke-api-extension --input ./payloads/order-create.json --key order-tagger
 ```
 
