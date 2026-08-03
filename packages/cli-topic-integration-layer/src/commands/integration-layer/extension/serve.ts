@@ -25,7 +25,11 @@ import { context as esbuildContext, type BuildContext } from "esbuild";
 import { defaultEntry, defaultOutfile, HOST_PROVIDED_EXTERNALS } from "../../../lib/tooling/build.js";
 import { loadBundleSource, type EvaluatedBundle } from "../../../lib/tooling/loadBundle.js";
 import { composeWithIntegrationLayer, type ComposeResult } from "../../../lib/tooling/compose.js";
-import { discoverExtensions, mergeExtensionSubgraph } from "../../../lib/tooling/extensions.js";
+import {
+  discoverExtensions,
+  entrySegmentFor,
+  mergeExtensionSubgraph,
+} from "../../../lib/tooling/extensions.js";
 import { makeGateway, mintAnonymousSession } from "../../../lib/tooling/gateway.js";
 import { fetchSubgraphSdl, getAllowlist } from "../../../lib/ilClient.js";
 import {
@@ -112,6 +116,11 @@ export default class ExtensionServe extends IntegrationLayerCommand {
 
   static override flags = {
     port: Flags.integer({ char: "p", description: "port to listen on", default: 4000 }),
+    entry: Flags.string({
+      description:
+        "extension entry source file (with --all: the per-package source segment applied under each ./extensions/*)",
+      default: defaultEntry(),
+    }),
     compose: Flags.boolean({
       description: "also serve the merged (extension + Commerce Integration Layer) schema at /composed",
       default: false,
@@ -215,7 +224,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     const sandboxFetch = await this.trySandboxFetch(flags);
     const restoreFetch = sandboxFetch ? installDelegatingFetch() : undefined;
 
-    const entry = defaultEntry();
+    const entry = flags.entry;
     const outfile = defaultOutfile();
     const port = flags.port;
     // In gateway mode /graphql is the gateway, so the raw extension subgraph moves to
@@ -416,14 +425,15 @@ export default class ExtensionServe extends IntegrationLayerCommand {
    * re-merges the combined subgraph, and a schema change recomposes + rebuilds the gateway.
    */
   private async runAll(
-    flags: { port: number; "extensions-dir": string; "auth-url"?: string } & IlFlagValues,
+    flags: { port: number; entry: string; "extensions-dir": string; "auth-url"?: string } & IlFlagValues,
   ): Promise<void> {
     const port = flags.port;
     const root = process.cwd();
-    const extensions = await discoverExtensions(root, flags["extensions-dir"]);
+    const entrySegment = entrySegmentFor(root, flags.entry);
+    const extensions = await discoverExtensions(root, flags["extensions-dir"], entrySegment);
     if (extensions.length === 0) {
       this.error(
-        `no extensions found under ./${flags["extensions-dir"]}/*/src/extension.ts — run --all from the monorepo root`,
+        `no extensions found under ./${flags["extensions-dir"]}/*/${entrySegment} — run --all from the monorepo root`,
       );
     }
 

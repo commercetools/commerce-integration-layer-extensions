@@ -16,7 +16,11 @@ export default class ExtensionValidate extends IntegrationLayerCommand {
   ];
 
   static override flags = {
-    entry: Flags.string({ description: "extension entry source file", default: defaultEntry() }),
+    entry: Flags.string({
+      description:
+        "extension entry source file (with --all: the per-package source segment applied under each ./extensions/*)",
+      default: defaultEntry(),
+    }),
     out: Flags.string({ description: "bundle output file", default: defaultOutfile() }),
     all: Flags.boolean({
       description:
