@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ExtensionResourceTypeIdValues } from "@commercetools/platform-sdk";
 import { captureOutput } from "@oclif/test";
 import { describe, expect, it } from "vitest";
-import ExtensionSampleGenerate from "../../src/commands/integration-layer/extension/sample-generate.js";
+import ExtensionCreateApiExtensionInput from "../../src/commands/integration-layer/extension/create-api-extension-input.js";
 import {
   EXTENSION_RESOURCE_TYPE_IDS,
   generateExtensionInputSample,
@@ -48,11 +48,11 @@ describe("generateExtensionInputSample", () => {
   });
 });
 
-describe("integration-layer extension sample-generate", () => {
+describe("integration-layer extension create-api-extension-input", () => {
   it("prints JSON to stdout by default", async () => {
     const { stdout } = await captureOutput(
       async () =>
-        ExtensionSampleGenerate.run(["--resource-type", "cart", "--action", "Create"]),
+        ExtensionCreateApiExtensionInput.run(["--resource-type", "cart", "--action", "Create"]),
       { print: false },
     );
     const parsed = JSON.parse(stdout);
@@ -65,7 +65,7 @@ describe("integration-layer extension sample-generate", () => {
     const out = join(dir, "cart-create.json");
     await captureOutput(
       async () =>
-        ExtensionSampleGenerate.run([
+        ExtensionCreateApiExtensionInput.run([
           "--resource-type",
           "cart",
           "--action",
@@ -81,7 +81,7 @@ describe("integration-layer extension sample-generate", () => {
 
   it("errors on an unsupported resource type", async () => {
     const { error } = await captureOutput(
-      async () => ExtensionSampleGenerate.run(["--resource-type", "product"]),
+      async () => ExtensionCreateApiExtensionInput.run(["--resource-type", "product"]),
       { print: false },
     );
     expect(error?.message).toMatch(/unsupported resource type/);

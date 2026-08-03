@@ -5,13 +5,13 @@ import {
   generateExtensionInputSample,
 } from "../../../lib/tooling/generateExtensionInputSample.js";
 
-export default class ExtensionSampleGenerate extends Command {
+export default class ExtensionCreateApiExtensionInput extends Command {
   static override description =
     "Write a realistic commercetools ExtensionInput JSON sample for a resource type and action";
 
   static override examples = [
-    "<%= config.bin %> integration-layer extension sample-generate --resource-type cart --action Create",
-    "<%= config.bin %> integration-layer extension sample-generate --resource-type order --action Update --out ./payloads/order-update.json",
+    "<%= config.bin %> integration-layer extension create-api-extension-input --resource-type cart --action Create",
+    "<%= config.bin %> integration-layer extension create-api-extension-input --resource-type order --action Update --out ./payloads/order-update.json",
   ];
 
   static override flags = {
@@ -33,7 +33,7 @@ export default class ExtensionSampleGenerate extends Command {
   };
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(ExtensionSampleGenerate);
+    const { flags } = await this.parse(ExtensionCreateApiExtensionInput);
 
     let sample;
     try {
