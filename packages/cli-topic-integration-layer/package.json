@@ -3,6 +3,11 @@
   "version": "0.6.0",
   "description": "commercetools CLI plugin: integration-layer topic",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/commercetools/commerce-integration-layer-extensions.git",
+    "directory": "packages/cli-topic-integration-layer"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "files": [
