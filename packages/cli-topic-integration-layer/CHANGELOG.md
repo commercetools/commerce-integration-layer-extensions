@@ -1,5 +1,11 @@
 # @commercetools/cli-topic-integration-layer
 
+## 0.6.0
+
+### Minor Changes
+
+- 49ec8c4: `extension serve` gates resolver `fetch` with the project's HTTP allowlist when logged in and the Commerce Integration Layer is reachable. Without login or when offline, fetch is unrestricted locally (stderr warning).
+
 ## 0.5.1
 
 ### Patch Changes
