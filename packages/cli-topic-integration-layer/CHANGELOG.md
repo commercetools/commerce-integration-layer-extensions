@@ -1,5 +1,18 @@
 # @commercetools/cli-topic-integration-layer
 
+## 0.7.0
+
+### Minor Changes
+
+- 9f43362: Make `--entry` consistent across `--all`. `build`, `validate`, and `push` now honour `--entry` in `--all` mode, applying it as the per-package source segment under each `./extensions/*` (the default still collapses to `src/extension.ts`, so `--entry src/main.ts` discovers and builds every package from its own `src/main.ts`). `extension serve` gains the same `--entry` flag, honoured in both standalone and `--all` mode. `--out` was already the single combined-artifact path under `--all` and is unchanged.
+- f87e610: Generalise `extension invoke-api-extension` beyond cart callbacks: `--input` (required) supplies a full commercetools `ExtensionInput`; `--key` (repeatable) restricts invocation to named handlers; `--all`/`--extensions-dir` invoke the merged bundle. Add `extension create-api-extension-input`, which derives supported resource types and enum values from `@commercetools/platform-sdk` and scaffolds realistic `{ action, resource }` JSON for local handler testing.
+- 2bec63f: Load a project `.env` (or `--env-file <path>`) before commands run, so `INTEGRATION_LAYER_URL` and local `EXTENSION_CONFIG_*` values work without exporting them in the shell (a variable already set in the environment still wins). `extension serve` additionally **hot-reloads** that file — editing an `EXTENSION_CONFIG_*` value updates `ctx.config` for the next request with no restart — and `extension invoke-api-extension` reads the same `EXTENSION_CONFIG_*` (env / `.env` / `--env-file`) for its `ctx.config`, with `--config` overriding a given key.
+- c2feacc: Rename `extension invoke` to `extension invoke-api-extension`. The command only ever fired a sample cart callback at a bundle's `apiExtensions` handlers (never the GraphQL half), so the old name didn't say what it invoked. Behaviour and flags are unchanged; update any script or CI step that called `extension invoke`.
+
+### Patch Changes
+
+- 54eda06: Refresh the `manage_project` bearer automatically instead of failing once it expires. Commands now authenticate like any other topic — a `prerun` hook fills this copy's security context from `~/.commercetools/credentials`, and every call goes through a `CtpAuthFetchFactory` fetch that injects the token and transparently refreshes/retries it. This removes the bespoke on-disk token reading and fixes `GET extension/bundle/meta failed (401): Bearer token is inactive or unknown` after a login goes stale.
+
 ## 0.6.0
 
 ### Minor Changes
