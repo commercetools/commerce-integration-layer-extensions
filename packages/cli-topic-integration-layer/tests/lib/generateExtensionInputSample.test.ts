@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ExtensionResourceTypeIdValues } from "@commercetools/platform-sdk";
 import { captureOutput } from "@oclif/test";
 import { describe, expect, it } from "vitest";
 import ExtensionSampleGenerate from "../../src/commands/integration-layer/extension/sample-generate.js";
@@ -11,10 +12,17 @@ import {
 } from "../../src/lib/tooling/generateExtensionInputSample.js";
 
 describe("generateExtensionInputSample", () => {
-  it("builds a cart Create payload with line items", () => {
+  it("tracks ExtensionResourceTypeIdValues from the platform SDK", () => {
+    expect([...EXTENSION_RESOURCE_TYPE_IDS].sort()).toEqual(
+      Object.values(ExtensionResourceTypeIdValues).sort(),
+    );
+  });
+
+  it("builds a cart Create payload with SDK enum values", () => {
     const sample = generateExtensionInputSample({ action: "Create", resourceTypeId: "cart" });
     expect(sample.action).toBe("Create");
     expect(sample.resource.typeId).toBe("cart");
+    expect(sample.resource.obj.cartState).toBe("Active");
     expect(sample.resource.obj.lineItems).toEqual(
       expect.arrayContaining([expect.objectContaining({ variant: { id: 1, sku: "SAMPLE-SKU" } })]),
     );

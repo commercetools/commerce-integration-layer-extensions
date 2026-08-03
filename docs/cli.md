@@ -312,13 +312,15 @@ commercetools integration-layer extension sample-generate --resource-type cart|o
 ```
 
 Writes a realistic commercetools `ExtensionInput` JSON sample for local handler testing.
-The output matches what [`extension invoke-api-extension`](#extension-invoke-api-extension)
+Supported resource types and enum field values come from `@commercetools/platform-sdk`
+(`ExtensionResourceTypeIdValues`, `CartStateValues`, `OrderStateValues`, …). The output
+matches what [`extension invoke-api-extension`](#extension-invoke-api-extension)
 expects: a `{ action, resource }` object whose `resource.obj` carries the fields a handler
 typically reads (line items on carts/orders, `amountPlanned` on payments, and so on).
 
 | Flag | Default |
 | --- | --- |
-| `--resource-type` | **required** — `cart`, `order`, `payment`, `payment-method`, `customer`, `customer-group`, `quote-request`, `staged-quote`, `quote`, `business-unit`, `shopping-list` |
+| `--resource-type` | **required** — from the SDK's `ExtensionResourceTypeIdValues` (`cart`, `order`, `payment`, …) |
 | `--action` | `Create` (or `Update`; Update samples carry `version: 2`) |
 | `--out` | — write to this file; omit to print JSON to stdout |
 | `--id` | `sample-<resource-type>-id` |

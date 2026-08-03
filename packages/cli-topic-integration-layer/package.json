@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@commercetools/cli-plugin-auth": ">=0.0.6",
+    "@commercetools/platform-sdk": "8.25.0",
     "@apollo/composition": "^2.14.1",
     "@apollo/gateway": "^2.14.1",
     "@apollo/subgraph": "^2.14.1",
@@ -39,7 +40,6 @@
     "typescript": "^5.7.2"
   },
   "devDependencies": {
-    "@commercetools/platform-sdk": "8.25.0",
     "@oclif/test": "^4.1.12",
     "@types/node": "^22.10.2",
     "rimraf": "^6.0.1",
