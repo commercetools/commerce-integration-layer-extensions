@@ -9,6 +9,8 @@ import type {
   ApiExtensionInput,
   ApiExtensionResult,
 } from "../../../lib/tooling/apiExtension.js";
+import { extensionConfigFromEnv, extensionConfigFromPairs } from "../../../lib/extensionConfig.js";
+import { loadLocalEnv } from "../../../lib/loadLocalEnv.js";
 
 /** The minimal envelope we read off a resolved payload to route it to handlers. */
 interface ResourceEnvelope {
@@ -62,6 +64,10 @@ export default class ExtensionInvokeApiExtension extends Command {
   ];
 
   static override flags = {
+    "env-file": Flags.string({
+      description:
+        "dotenv file to load before the command runs (default: .env in the cwd, if present); does not override variables already set in the environment",
+    }),
     entry: Flags.string({
       description:
         "extension entry source file (with --all: the per-package source segment applied under each ./extensions/*)",
@@ -104,11 +110,19 @@ export default class ExtensionInvokeApiExtension extends Command {
       default: 1,
     }),
     config: Flags.string({
-      description: "a ctx.config entry as KEY=VALUE (repeatable)",
+      description:
+        "a ctx.config entry as KEY=VALUE (repeatable); overrides EXTENSION_CONFIG_* from the environment / .env",
       multiple: true,
       delimiter: ",",
     }),
   };
+
+  protected override async init(): Promise<void> {
+    // Load `.env` / `--env-file` into process.env before flags parse, so
+    // EXTENSION_CONFIG_* is visible below (an already-set shell variable still wins).
+    loadLocalEnv();
+    await super.init();
+  }
 
   /**
    * The payload to hand the handlers: a supplied `--input` JSON file (a full
@@ -148,11 +162,11 @@ export default class ExtensionInvokeApiExtension extends Command {
   async run(): Promise<void> {
     const { flags } = await this.parse(ExtensionInvokeApiExtension);
 
-    const config: Record<string, string> = {};
-    for (const pair of flags.config ?? []) {
-      const eq = pair.indexOf("=");
-      if (eq > 0) config[pair.slice(0, eq)] = pair.slice(eq + 1);
-    }
+    // Environment / `.env` first; an explicit `--config` wins on the same key.
+    const config = {
+      ...extensionConfigFromEnv(),
+      ...extensionConfigFromPairs(flags.config ?? []),
+    };
 
     let outfile: string;
     try {

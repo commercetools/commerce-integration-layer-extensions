@@ -93,6 +93,12 @@ Available on every authenticated command (help group `COMMERCE INTEGRATION LAYER
 | `--integration-layer-url` | `INTEGRATION_LAYER_URL` | extensions edge base URL; overrides the Region-derived host |
 | `--project-key` | — | act on a different Project than the logged-in one |
 
+Every authenticated command, plus the offline `extension serve` and
+`extension invoke-api-extension`, also takes `--env-file <path>` — a dotenv file loaded
+before the command runs (default: `.env` in the cwd, if present). A variable already set
+in the shell always wins; `INTEGRATION_LAYER_URL` and local `EXTENSION_CONFIG_*` values
+can live there (see [local development](authoring.md#local-development)).
+
 ## One bundle per Project, and `--all`
 
 A Project deploys exactly **one** bundle — one federation subgraph the router composes
@@ -164,16 +170,18 @@ Offline; no login needed.
 ### `extension serve`
 
 ```
-commercetools integration-layer extension serve [-p 4000] [--entry f] [--compose] [--gateway] [--all] [--auth-url u]
+commercetools integration-layer extension serve [-p 4000] [--entry f] [--compose] [--gateway] [--all] [--auth-url u] [--env-file path]
 ```
 
 A live GraphQL server with GraphiQL and esbuild watch, calling your resolvers with the
 same `ctx` they get in production (`ctx.now()`, and `ctx.config` from
-[`EXTENSION_CONFIG_*`](authoring.md#local-development)). When logged in and the Commerce
+[`EXTENSION_CONFIG_*`](authoring.md#local-development) in the environment, a project
+`.env`, or `--env-file`). When logged in and the Commerce
 Integration Layer is reachable, resolver `fetch` is gated by the same project HTTP
 allowlist as production (`allowlist list` / `allowlist add …`). Without login or when
-offline, `fetch` is unrestricted locally (stderr warning). Save the file and the schema
-reloads. Three modes:
+offline, `fetch` is unrestricted locally (stderr warning). Save the extension source and
+the schema reloads; save the `.env` / `--env-file` and `ctx.config` reloads too — both
+with no restart (a shell variable still wins over the file). Three modes:
 
 | Mode | `/graphql` is | Reaches the Commerce Integration Layer | Extra routes |
 | --- | --- | --- | --- |
@@ -265,7 +273,7 @@ Removes the extension subgraph from the Project's published graph. Prompts unles
 ```
 commercetools integration-layer extension invoke-api-extension [--resource-type cart|order|…] [--action Create|Update]
                                                                [--input file.json] [--key k]... [--sku s] [--quantity n]
-                                                               [--all] [--config KEY=VALUE]...
+                                                               [--all] [--config KEY=VALUE]... [--env-file path]
 ```
 
 Fires a commercetools callback at the bundle's [API-Extension][apiext] handlers and
@@ -278,7 +286,9 @@ a commercetools `ExtensionInput` (`{ action, resource }`, or a bare resource, in
 case `--action` fills the action). `--input` is how you exercise *any* handler with a
 realistic payload; it overrides `--resource-type`/`--sku`/`--quantity`. A handler fires
 only when its `resourceTypeId` and `actions` match the payload — others are reported as
-skipped. `--key` (repeatable) restricts invocation to named handlers.
+skipped. `--key` (repeatable) restricts invocation to named handlers. `ctx.config` comes
+from `EXTENSION_CONFIG_*` in the environment / `.env` / `--env-file`; a `--config` entry
+overrides the same key.
 
 | Flag | Default |
 | --- | --- |
@@ -289,7 +299,8 @@ skipped. `--key` (repeatable) restricts invocation to named handlers.
 | `--sku` | `BLOCKED-SKU` — the SKU on the sample cart line item |
 | `--quantity` | `1` — the quantity on the sample cart line item |
 | `--all`, `--extensions-dir` | invoke the merged bundle — see [`--all`](#one-bundle-per-project-and---all) |
-| `--config` | repeatable `KEY=VALUE`, becomes `ctx.config` |
+| `--config` | repeatable `KEY=VALUE`, becomes `ctx.config` (overrides env / `.env`) |
+| `--env-file` | optional dotenv path (default: load `.env` from cwd if present) |
 
 ```bash
 commercetools integration-layer extension invoke-api-extension --sku ALLOWED
