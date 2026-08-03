@@ -170,22 +170,19 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       }
     }
     try {
-      const { allow, deny } = await getAllowlist(
+      const { allow } = await getAllowlist(
         ilContext.baseUrl,
         ilContext.projectKey,
         ilContext.token,
       );
       if (allow.length === 0) {
         this.log(
-          `⚠ extension HTTP allowlist for '${ilContext.projectKey}' is empty — resolver fetch can reach nothing until hosts are added (commercetools integration-layer allowlist add …)`,
+          `⚠ extension HTTP allowlist for '${ilContext.projectKey}' is empty — resolver fetch can reach only localhost until hosts are added (commercetools integration-layer allowlist add …)`,
         );
       } else {
-        const denyNote = deny.length > 0 ? ` (deny: ${deny.join(", ")})` : "";
-        this.log(
-          `Extension HTTP allowlist for '${ilContext.projectKey}': ${allow.join(", ")}${denyNote}`,
-        );
+        this.log(`Extension HTTP allowlist for '${ilContext.projectKey}': ${allow.join(", ")}`);
       }
-      return createSandboxFetch(() => ({ allow, deny }));
+      return createSandboxFetch(() => allow);
     } catch (err) {
       this.warnUnrestrictedResolverFetch(
         `could not load the extension HTTP allowlist (${(err as Error).message})`,
@@ -295,6 +292,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
           plugins: [useApolloFederation({ gateway: gw })],
           graphqlEndpoint: "/graphql",
           landingPage: false,
+          maskedErrors: false,
         });
         log(`✓ gateway ready at http://localhost:${port}/graphql`);
         if (prev) await prev.stop();
@@ -324,6 +322,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       context: () => devContext(),
       graphqlEndpoint: subgraphPath,
       landingPage: false,
+      maskedErrors: false,
     });
 
     // The composed, client-facing merged schema — browsable/introspectable, not
@@ -500,6 +499,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
           plugins: [useApolloFederation({ gateway: gw })],
           graphqlEndpoint: "/graphql",
           landingPage: false,
+          maskedErrors: false,
         });
         log(`✓ gateway ready at http://localhost:${port}/graphql`);
         if (prev) await prev.stop();
@@ -550,6 +550,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       context: () => devContext(),
       graphqlEndpoint: "/_extension",
       landingPage: false,
+      maskedErrors: false,
     });
 
     // The browsable (not executable) merged API schema.

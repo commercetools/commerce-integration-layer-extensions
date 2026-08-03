@@ -38,25 +38,9 @@ describe("createSandboxFetch", () => {
     await withFetchStub(
       () => jsonResponse(200, "{}"),
       async (calls) => {
-        const sandboxFetch = createSandboxFetch(() => ({ allow: ["*.algolia.net"], deny: [] }));
+        const sandboxFetch = createSandboxFetch(() => ["*.algolia.net"]);
         await expect(sandboxFetch("https://evil.example.com/steal")).rejects.toThrow(
           /not in the extension HTTP allowlist/,
-        );
-        expect(calls).toHaveLength(0);
-      },
-    );
-  });
-
-  it("blocks a host on the deny list even when it is allowed", async () => {
-    await withFetchStub(
-      () => jsonResponse(200, "{}"),
-      async (calls) => {
-        const sandboxFetch = createSandboxFetch(() => ({
-          allow: ["*.algolia.net"],
-          deny: ["evil.algolia.net"],
-        }));
-        await expect(sandboxFetch("https://evil.algolia.net/x")).rejects.toThrow(
-          /blocked by the extension HTTP deny list/,
         );
         expect(calls).toHaveLength(0);
       },
@@ -67,15 +51,47 @@ describe("createSandboxFetch", () => {
     await withFetchStub(
       () => jsonResponse(200, "{}"),
       async (calls) => {
-        let rules = { allow: [] as string[], deny: [] as string[] };
-        const sandboxFetch = createSandboxFetch(() => rules);
+        let allow: string[] = [];
+        const sandboxFetch = createSandboxFetch(() => allow);
         await expect(sandboxFetch("https://x.algolia.net/y")).rejects.toThrow(
           /not in the extension HTTP allowlist/,
         );
-        rules = { allow: ["*.algolia.net"], deny: [] };
+        allow = ["*.algolia.net"];
         const res = await sandboxFetch("https://x.algolia.net/y");
         expect(res.status).toBe(200);
         expect(calls).toHaveLength(1);
+      },
+    );
+  });
+
+  it("always allows loopback hosts locally, even with an empty allowlist", async () => {
+    await withFetchStub(
+      () => jsonResponse(200, "{}"),
+      async (calls) => {
+        const sandboxFetch = createSandboxFetch(() => []);
+        for (const url of [
+          "http://localhost:4010/x",
+          "http://127.0.0.1:4010/x",
+          "http://mock.localhost:4010/x",
+          "http://[::1]:4010/x",
+        ]) {
+          const res = await sandboxFetch(url);
+          expect(res.status).toBe(200);
+        }
+        expect(calls).toHaveLength(4);
+      },
+    );
+  });
+
+  it("still refuses a non-loopback host that only looks local", async () => {
+    await withFetchStub(
+      () => jsonResponse(200, "{}"),
+      async (calls) => {
+        const sandboxFetch = createSandboxFetch(() => []);
+        await expect(sandboxFetch("http://localhost.evil.com/x")).rejects.toThrow(
+          /not in the extension HTTP allowlist/,
+        );
+        expect(calls).toHaveLength(0);
       },
     );
   });
@@ -84,7 +100,7 @@ describe("createSandboxFetch", () => {
     await withFetchStub(
       () => jsonResponse(200, JSON.stringify({ value: "pong" })),
       async (calls) => {
-        const sandboxFetch = createSandboxFetch(() => ({ allow: ["*.algolia.net"], deny: [] }));
+        const sandboxFetch = createSandboxFetch(() => ["*.algolia.net"]);
         const res = await sandboxFetch("https://abc-dsn.algolia.net/1/x", {
           method: "POST",
           headers: { "x-test": "1" },
@@ -102,7 +118,7 @@ describe("wrapResolverMap + installDelegatingFetch", () => {
     await withFetchStub(
       () => jsonResponse(200, "{}"),
       async (calls) => {
-        const sandboxFetch = createSandboxFetch(() => ({ allow: ["catfact.ninja"], deny: [] }));
+        const sandboxFetch = createSandboxFetch(() => ["catfact.ninja"]);
         const restore = installDelegatingFetch();
         try {
           const resolvers = wrapResolverMap(

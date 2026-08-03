@@ -1,31 +1,41 @@
-// Allowlist-gated `fetch` for the local `serve` dev server — the same host rules the
-// production extension sandbox enforces (merchant `allow` + operator `deny`). Resolvers
-// run through {@link wrapResolverMap} so only extension code sees this wrapper; the
-// gateway and integration-layer client keep the real Node `fetch`.
-//
-// Copied from octolog-extensions-sandbox/service/src/bundle/http.ts (minus OTel).
+// Allowlist-gated `fetch` for the local `serve` dev server — the same merchant
+// `allow` list production enforces, plus loopback hosts (localhost/127.0.0.0/8/::1)
+// which are always permitted locally so an extension can reach a service on the
+// dev machine while you iterate (see isLocalhost). Resolvers run through
+// {@link wrapResolverMap} so only extension code sees this wrapper; the gateway
+// and integration-layer client keep the real Node `fetch`.
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
-/** The two host-pattern lists governing extension egress. */
-export interface AllowlistRules {
-  allow: string[];
-  deny: string[];
-}
-
-/** Supplies the current rules, re-read on every sandbox `fetch` call. */
-export type AllowlistProvider = () => AllowlistRules;
+/** Supplies the current allow patterns, re-read on every sandbox `fetch` call. */
+export type AllowlistProvider = () => readonly string[];
 
 /** Does `hostname` match any allowlist pattern? */
-function hostAllowed(hostname: string, patterns: string[]): boolean {
+function hostAllowed(hostname: string, allowlist: readonly string[]): boolean {
   const host = hostname.toLowerCase();
-  return patterns.some((pattern) => {
+  return allowlist.some((pattern) => {
     if (pattern.startsWith("*.")) {
       const suffix = pattern.slice(2);
       return host === suffix || host.endsWith(`.${suffix}`);
     }
     return host === pattern;
   });
+}
+
+/**
+ * Loopback hosts served by the developer's own machine. `serve` always permits
+ * these regardless of the merchant allow list, so an extension can reach a service
+ * running locally (a mock, a companion API) while you iterate. This is a
+ * LOCAL-DEV-ONLY affordance: the deployed sandbox enforces only the real allow
+ * list, and localhost is never on it — so nothing here loosens production.
+ * Covers `localhost` (and any `*.localhost` subdomain), the IPv4 loopback range
+ * `127.0.0.0/8`, and IPv6 `::1` (brackets stripped as the WHATWG URL keeps them).
+ */
+function isLocalhost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host === "::1") return true;
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host);
 }
 
 function requestUrl(input: Parameters<typeof fetch>[0]): string {
@@ -37,7 +47,7 @@ function requestUrl(input: Parameters<typeof fetch>[0]): string {
 
 /**
  * Build the allowlist-gated `fetch` the production sandbox endows. Throws a `TypeError`
- * — like `fetch` on failure — when the destination is not permitted.
+ * — like `fetch` on failure — when the destination is not on the allow list.
  */
 export function createSandboxFetch(allowlistProvider: AllowlistProvider): typeof fetch {
   const realFetch = globalThis.fetch.bind(globalThis);
@@ -55,12 +65,10 @@ export function createSandboxFetch(allowlistProvider: AllowlistProvider): typeof
       throw new TypeError(`fetch: unsupported protocol "${parsed.protocol}"`);
     }
     const host = parsed.hostname;
-    const { allow, deny } = allowlistProvider();
-    if (!hostAllowed(host, allow)) {
+    // Loopback is always reachable locally (see isLocalhost); everything else must
+    // be on the merchant allow list, exactly as production enforces.
+    if (!isLocalhost(host) && !hostAllowed(host, allowlistProvider())) {
       throw new TypeError(`fetch: host "${host}" is not in the extension HTTP allowlist`);
-    }
-    if (hostAllowed(host, deny)) {
-      throw new TypeError(`fetch: host "${host}" is blocked by the extension HTTP deny list`);
     }
     return realFetch(input, { ...init, redirect: "manual" });
   };
