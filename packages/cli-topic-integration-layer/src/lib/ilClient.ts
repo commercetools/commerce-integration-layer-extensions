@@ -322,3 +322,52 @@ export async function patchConfig(
   }
   return JSON.parse(text) as ConfigEntry[];
 }
+
+/** The deployed connector's verdict, as the Commerce Integration Layer's invoke proxy returns it. */
+export interface DeployedInvokeResponse {
+  /** The connector's own HTTP status: 200 (approve/modify), 400 (block), 401/5xx (fault). */
+  status: number;
+  /** The connector's response body ({}, { actions }, { errors }, …) — the API-Extension result. */
+  result: unknown;
+}
+
+/**
+ * Fire ONE commercetools API-Extension callback at the project's DEPLOYED extension
+ * and return the connector's verdict (`POST …/extension/api-extensions/invoke`).
+ *
+ * The Commerce Integration Layer is the signing proxy: only it can mint the shared-secret
+ * bearer the connector's `/api-extensions` endpoint requires (derived from the
+ * project's stored client secret), so the CLI hands it the payload and the integration
+ * layer resolves the deployed connector URL, signs, forwards, and returns the result.
+ * Nothing is persisted to commercetools — it is the callback in isolation.
+ *
+ * A connector that ANSWERS — including a 400 block — comes back inside the
+ * `{ status, result }` envelope (a block is a verdict, not a failure). This throws
+ * only when the deployed extension could not be REACHED (no deployment, no service
+ * URL yet, timeout) or the request was rejected (not enrolled, unauthorized).
+ */
+export async function invokeDeployedApiExtension(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+  input: { action: string; resource: { typeId: string } },
+): Promise<DeployedInvokeResponse> {
+  const url = `${apiRoot(baseUrl, projectKey)}/extension/api-extensions/invoke`;
+  const res = await authFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let detail = text;
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      if (parsed.error) detail = parsed.error;
+    } catch {
+      // Non-JSON body — surface it raw.
+    }
+    throw new Error(`could not invoke the deployed extension (${res.status}): ${detail}`);
+  }
+  return JSON.parse(text) as DeployedInvokeResponse;
+}
