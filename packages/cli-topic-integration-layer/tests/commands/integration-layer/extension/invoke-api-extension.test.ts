@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureOutput } from "@oclif/test";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import ExtensionInvokeApiExtension from "../../../../src/commands/integration-layer/extension/invoke-api-extension.js";
 
 /** Write an extension source into a temp package; return the flags addressing it. */
@@ -68,5 +68,112 @@ describe("integration-layer extension invoke-api-extension", () => {
 
     expect(stdout).toContain("x1");
     expect(stdout).toContain("APPROVE");
+  });
+});
+
+/** A bundle with two handlers on different resource types. */
+const MIXED = `
+  export const apiExtensions = [
+    { key: "cart-guard", resourceTypeId: "cart", actions: ["Create", "Update"],
+      handler: () => ({ errors: [{ code: "NoCart", message: "blocked" }] }) },
+    { key: "order-tagger", resourceTypeId: "order", actions: ["Create"],
+      handler: (input) => ({ actions: [{ action: "setKey", key: "seen-" + input.resource.id }] }) },
+  ];
+`;
+
+describe("integration-layer extension invoke-api-extension — any resource type", () => {
+  it("targets a non-cart resource via --resource-type and skips handlers that don't trigger", async () => {
+    const flags = await bundleFlags(MIXED);
+    const { stdout } = await captureOutput(
+      async () => ExtensionInvokeApiExtension.run([...flags, "--resource-type", "order"]),
+      { print: false },
+    );
+
+    expect(stdout).toContain("on order");
+    expect(stdout).toContain("order-tagger: MODIFY");
+    expect(stdout).toContain("setKey");
+    expect(stdout).toContain("cart-guard: skipped");
+  });
+
+  it("drives a handler from a supplied --input ExtensionInput file", async () => {
+    const flags = await bundleFlags(MIXED);
+    const dir = await mkdtemp(join(tmpdir(), "il-cli-invoke-input-"));
+    const inputPath = join(dir, "order.json");
+    await writeFile(
+      inputPath,
+      JSON.stringify({ action: "Create", resource: { typeId: "order", id: "o-42", obj: { id: "o-42" } } }),
+      "utf8",
+    );
+
+    const { stdout } = await captureOutput(
+      async () => ExtensionInvokeApiExtension.run([...flags, "--input", inputPath]),
+      { print: false },
+    );
+
+    expect(stdout).toContain("on order");
+    expect(stdout).toContain("seen-o-42"); // the handler read the id from OUR payload
+  });
+
+  it("restricts invocation to --key handlers", async () => {
+    const flags = await bundleFlags(MIXED);
+    const { stdout } = await captureOutput(
+      async () => ExtensionInvokeApiExtension.run([...flags, "--key", "cart-guard"]),
+      { print: false },
+    );
+
+    expect(stdout).toContain("Invoking 1 handler(s)");
+    expect(stdout).toContain("cart-guard: BLOCK");
+    expect(stdout).not.toContain("order-tagger"); // filtered out entirely, not even a skip line
+  });
+
+  it("errors when --input is not a valid ExtensionInput", async () => {
+    const flags = await bundleFlags(MIXED);
+    const dir = await mkdtemp(join(tmpdir(), "il-cli-invoke-bad-"));
+    const inputPath = join(dir, "bad.json");
+    await writeFile(inputPath, JSON.stringify({ nope: true }), "utf8");
+
+    const { error } = await captureOutput(
+      async () => ExtensionInvokeApiExtension.run([...flags, "--input", inputPath]),
+      { print: false },
+    );
+    expect(error?.message).toMatch(/ExtensionInput/);
+  });
+});
+
+describe("integration-layer extension invoke-api-extension — --all", () => {
+  const cwd = process.cwd();
+  afterEach(() => process.chdir(cwd));
+
+  it("invokes handlers merged from every extension under ./extensions/*", async () => {
+    const root = await mkdtemp(join(tmpdir(), "il-cli-invoke-all-"));
+    const write = async (name: string, source: string): Promise<void> => {
+      await mkdir(join(root, "extensions", name, "src"), { recursive: true });
+      await writeFile(join(root, "extensions", name, "src", "extension.ts"), source, "utf8");
+    };
+    await write(
+      "guard",
+      `export const apiExtensions = [
+        { key: "cart-guard", resourceTypeId: "cart", actions: ["Create", "Update"],
+          handler: () => ({ errors: [{ code: "NoCart", message: "blocked" }] }) },
+      ];`,
+    );
+    await write(
+      "tagger",
+      `export const apiExtensions = [
+        { key: "cart-tagger", resourceTypeId: "cart", actions: ["Create", "Update"],
+          handler: () => ({ actions: [{ action: "setKey", key: "tagged" }] }) },
+      ];`,
+    );
+
+    process.chdir(root);
+    const { stdout } = await captureOutput(
+      async () => ExtensionInvokeApiExtension.run(["--all", "--out", join(root, "dist", "extension.js")]),
+      { print: false },
+    );
+
+    // Both extensions' cart handlers are concatenated into the one deployed bundle.
+    expect(stdout).toContain("Invoking 2 handler(s)");
+    expect(stdout).toContain("cart-guard: BLOCK");
+    expect(stdout).toContain("cart-tagger: MODIFY");
   });
 });
