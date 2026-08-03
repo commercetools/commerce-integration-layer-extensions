@@ -292,18 +292,32 @@ Two things they don't:
 
 ### Local development
 
-`serve` and `invoke-api-extension` have no Commerce Integration Layer to read configuration from, so they take
-it from `EXTENSION_CONFIG_*` environment variables — `EXTENSION_CONFIG_ALGOLIA_API_KEY`
-becomes `ctx.config.ALGOLIA_API_KEY`:
+`serve` and `invoke-api-extension` have no Commerce Integration Layer to read configuration from, so
+they take it from `EXTENSION_CONFIG_*` environment variables — `EXTENSION_CONFIG_ALGOLIA_API_KEY`
+becomes `ctx.config.ALGOLIA_API_KEY`. Put them in a project `.env` (which `serve` loads
+automatically from the cwd) or pass `--env-file <path>`; a variable already set in the
+shell always wins:
 
 ```bash
-EXTENSION_CONFIG_ALGOLIA_APP_ID=ABC123 \
-EXTENSION_CONFIG_ALGOLIA_INDEX_NAME=products \
-EXTENSION_CONFIG_ALGOLIA_API_KEY=search-only-key \
-  pnpm dev
+# .env
+EXTENSION_CONFIG_ALGOLIA_APP_ID=ABC123
+EXTENSION_CONFIG_ALGOLIA_INDEX_NAME=products
+EXTENSION_CONFIG_ALGOLIA_API_KEY=search-only-key
 ```
 
-`invoke-api-extension` also takes them inline: `--config BLOCKED_SKU=NO-SELL` (repeatable).
+```bash
+pnpm dev
+# or: commercetools integration-layer extension serve --env-file .env.local
+```
+
+`serve` **hot-reloads** that file: edit an `EXTENSION_CONFIG_*` value and save, and the
+next request sees the new `ctx.config` with no restart — the same inner loop as editing a
+resolver. A variable set in the shell still wins over the file, so an inline
+`EXTENSION_CONFIG_… pnpm dev` isn't shadowed by a later file edit; to change one of those,
+restart.
+
+You can still set them inline on the shell, and `invoke-api-extension` also takes them as
+`--config BLOCKED_SKU=NO-SELL` (repeatable).
 
 ### The configuration endpoint
 
