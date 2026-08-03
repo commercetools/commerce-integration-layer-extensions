@@ -29,12 +29,8 @@ commercetools auth login --project-key <your-project-key>
 commercetools integration-layer init [DIR]                  # scaffold an extensions monorepo [offline]
 
 commercetools integration-layer extension build             # bundle src/extension.ts → dist [offline]
-commercetools integration-layer extension serve             # local dev server, GraphiQL + hot reload
+commercetools integration-layer extension serve             # local dev server; allowlist-gated fetch when online + logged in
 commercetools integration-layer extension invoke            # fire a sample API-Extension callback [offline]
-commercetools integration-layer extension validate          # local checks + remote compose/breaking gate
-commercetools integration-layer extension push              # build + validate + upload, then await the load verdict
-commercetools integration-layer extension status            # the Project's stored bundle
-commercetools integration-layer extension delete            # remove the extension subgraph
 
 commercetools integration-layer explore                     # local GraphQL explorer over your deployed edge
 commercetools integration-layer schema fetch                # the Project's core-subgraph SDL

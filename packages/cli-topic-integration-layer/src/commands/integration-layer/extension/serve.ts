@@ -27,12 +27,18 @@ import { loadBundleSource, type EvaluatedBundle } from "../../../lib/tooling/loa
 import { composeWithIntegrationLayer, type ComposeResult } from "../../../lib/tooling/compose.js";
 import { discoverExtensions, mergeExtensionSubgraph } from "../../../lib/tooling/extensions.js";
 import { makeGateway, mintAnonymousSession } from "../../../lib/tooling/gateway.js";
-import { fetchSubgraphSdl } from "../../../lib/ilClient.js";
+import { fetchSubgraphSdl, getAllowlist } from "../../../lib/ilClient.js";
 import {
   IntegrationLayerCommand,
   authEdgeUrlForRegion,
+  type IlContext,
   type IlFlagValues,
 } from "../../../lib/base.js";
+import {
+  createSandboxFetch,
+  installDelegatingFetch,
+  wrapResolverMap,
+} from "../../../lib/tooling/sandboxFetch.js";
 
 /** The host-mediated capability context the runtime passes a resolver (3rd arg). */
 interface ExtensionContext {
@@ -71,7 +77,7 @@ interface BuiltSubgraph {
  * does. Throws (with a clean message) if the bundle didn't export a `typeDefs` string
  * + `resolvers` object — the same shape `validateBundle` checks.
  */
-function buildSubgraph(mod: EvaluatedBundle): BuiltSubgraph {
+function buildSubgraph(mod: EvaluatedBundle, sandboxFetch?: typeof fetch): BuiltSubgraph {
   const { typeDefs, resolvers } = mod;
   if (typeof typeDefs !== "string" || typeDefs.trim() === "") {
     throw new Error("bundle must export a non-empty `typeDefs` string");
@@ -79,10 +85,11 @@ function buildSubgraph(mod: EvaluatedBundle): BuiltSubgraph {
   if (resolvers === null || typeof resolvers !== "object") {
     throw new Error("bundle must export a `resolvers` object");
   }
+  const resolvedResolvers = sandboxFetch ? wrapResolverMap(resolvers, sandboxFetch) : resolvers;
   // `@apollo/subgraph` types `resolvers` as its internal `GraphQLResolverMap`; the
   // bundle's exports are `unknown` (validated above), so cast through the function's
   // own parameter type rather than reaching into its `dist/` internals.
-  const moduleArg = { typeDefs: parse(typeDefs), resolvers } as unknown as Parameters<
+  const moduleArg = { typeDefs: parse(typeDefs), resolvers: resolvedResolvers } as unknown as Parameters<
     typeof buildSubgraphSchema
   >[0];
   return { schema: buildSubgraphSchema(moduleArg), typeDefs };
@@ -100,6 +107,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
 
   // Standalone serve needs no login; --compose/--gateway resolve the context lazily
   // (and then require a logged-in principal) only when they actually reach the IL.
+  // The HTTP allowlist is fetched best-effort when logged in and online.
   protected override authorized = false;
 
   static override flags = {
@@ -138,6 +146,55 @@ export default class ExtensionServe extends IntegrationLayerCommand {
    * would double-count the local extension. Overridable via --auth-url / IL_AUTH_URL for
    * staging zones that don't follow the production host convention.
    */
+  private warnUnrestrictedResolverFetch(reason: string): void {
+    this.logToStderr(
+      `⚠ ${reason} — resolver fetch is UNRESTRICTED locally (production still enforces the project allowlist)`,
+    );
+  }
+
+  /**
+   * Load the project's extension HTTP allowlist when logged in and the integration layer
+   * is reachable. Returns undefined (after a warning) when not logged in or offline.
+   */
+  private async trySandboxFetch(
+    flags: IlFlagValues,
+    ctx?: IlContext,
+  ): Promise<typeof fetch | undefined> {
+    let ilContext = ctx;
+    if (!ilContext) {
+      try {
+        ilContext = await this.resolveIlContext(flags);
+      } catch (err) {
+        this.warnUnrestrictedResolverFetch((err as Error).message);
+        return undefined;
+      }
+    }
+    try {
+      const { allow } = await getAllowlist(
+        ilContext.baseUrl,
+        ilContext.projectKey,
+        ilContext.token,
+      );
+      if (allow.length === 0) {
+        this.log(
+          `⚠ extension HTTP allowlist for '${ilContext.projectKey}' is empty — resolver fetch can reach only localhost until hosts are added (commercetools integration-layer allowlist add …)`,
+        );
+      } else {
+        this.log(`Extension HTTP allowlist for '${ilContext.projectKey}': ${allow.join(", ")}`);
+      }
+      return createSandboxFetch(() => allow);
+    } catch (err) {
+      this.warnUnrestrictedResolverFetch(
+        `could not load the extension HTTP allowlist (${(err as Error).message})`,
+      );
+      return undefined;
+    }
+  }
+
+  private maybeWrapResolvers(resolvers: object, sandboxFetch: typeof fetch | undefined): object {
+    return sandboxFetch ? wrapResolverMap(resolvers, sandboxFetch) : resolvers;
+  }
+
   private resolveAuthEdge(flags: { "auth-url"?: string }): string {
     const authUrl = flags["auth-url"] ?? authEdgeUrlForRegion(this.requirePrincipal().getRegion());
     if (!authUrl) {
@@ -155,6 +212,9 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       await this.runAll(flags);
       return;
     }
+    const sandboxFetch = await this.trySandboxFetch(flags);
+    const restoreFetch = sandboxFetch ? installDelegatingFetch() : undefined;
+
     const entry = defaultEntry();
     const outfile = defaultOutfile();
     const port = flags.port;
@@ -201,7 +261,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       this.logToStderr(m);
     };
 
-    const ctx = await this.watchAndBuild(entry, outfile, async (built) => {
+    const ctx = await this.watchAndBuild(entry, outfile, sandboxFetch, async (built) => {
       subgraphSchema = built.schema;
       if (!withIntegrationLayer) return;
       composed = composeWithIntegrationLayer(integrationLayerSdl!, built.typeDefs, {
@@ -232,6 +292,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
           plugins: [useApolloFederation({ gateway: gw })],
           graphqlEndpoint: "/graphql",
           landingPage: false,
+          maskedErrors: false,
         });
         log(`✓ gateway ready at http://localhost:${port}/graphql`);
         if (prev) await prev.stop();
@@ -261,6 +322,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       context: () => devContext(),
       graphqlEndpoint: subgraphPath,
       landingPage: false,
+      maskedErrors: false,
     });
 
     // The composed, client-facing merged schema — browsable/introspectable, not
@@ -333,6 +395,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     this.log(lines.join("\n"));
 
     const shutdown = (): void => {
+      restoreFetch?.();
       void ctx.dispose();
       server.close(() => process.exit(0));
     };
@@ -364,9 +427,13 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       );
     }
 
+    const ilContext = await this.resolveIlContext(flags);
+    const sandboxFetch = await this.trySandboxFetch(flags, ilContext);
+    const restoreFetch = sandboxFetch ? installDelegatingFetch() : undefined;
+
     // Reach the Commerce Integration Layer exactly like --gateway: its core-subgraph SDL is the
     // compose baseline, and an anonymous session authenticates the gateway's calls.
-    const { baseUrl, projectKey, token } = await this.resolveIlContext(flags);
+    const { baseUrl, projectKey, token } = ilContext;
     // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the gateway
     // routes to and the /session it mints are on the identity edge, reached via the
     // identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
@@ -432,6 +499,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
           plugins: [useApolloFederation({ gateway: gw })],
           graphqlEndpoint: "/graphql",
           landingPage: false,
+          maskedErrors: false,
         });
         log(`✓ gateway ready at http://localhost:${port}/graphql`);
         if (prev) await prev.stop();
@@ -454,7 +522,10 @@ export default class ExtensionServe extends IntegrationLayerCommand {
           warn(`✗ extension '${ext.name}' exported no \`resolvers\` object`);
           return;
         }
-        modules.set(ext.name, { typeDefs, resolvers });
+        modules.set(ext.name, {
+          typeDefs,
+          resolvers: this.maybeWrapResolvers(resolvers, sandboxFetch),
+        });
         await recompose();
       });
       contexts.push(ctx);
@@ -479,6 +550,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       context: () => devContext(),
       graphqlEndpoint: "/_extension",
       landingPage: false,
+      maskedErrors: false,
     });
 
     // The browsable (not executable) merged API schema.
@@ -548,6 +620,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     this.log(lines.join("\n"));
 
     const shutdown = (): void => {
+      restoreFetch?.();
       for (const ctx of contexts) void ctx.dispose();
       server.close(() => process.exit(0));
     };
@@ -566,10 +639,11 @@ export default class ExtensionServe extends IntegrationLayerCommand {
   private async watchAndBuild(
     entry: string,
     outfile: string,
+    sandboxFetch: typeof fetch | undefined,
     onBuild: (built: BuiltSubgraph) => void | Promise<void>,
   ): Promise<BuildContext> {
     return this.watchEntry(entry, outfile, async (mod) => {
-      await onBuild(buildSubgraph(mod));
+      await onBuild(buildSubgraph(mod, sandboxFetch));
     });
   }
 

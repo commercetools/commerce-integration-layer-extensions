@@ -162,7 +162,10 @@ commercetools integration-layer extension serve [-p 4000] [--compose] [--gateway
 
 A live GraphQL server with GraphiQL and esbuild watch, calling your resolvers with the
 same `ctx` they get in production (`ctx.now()`, and `ctx.config` from
-[`EXTENSION_CONFIG_*`](authoring.md#local-development)). Save the file and the schema
+[`EXTENSION_CONFIG_*`](authoring.md#local-development)). When logged in and the Commerce
+Integration Layer is reachable, resolver `fetch` is gated by the same project HTTP
+allowlist as production (`allowlist list` / `allowlist add …`). Without login or when
+offline, `fetch` is unrestricted locally (stderr warning). Save the file and the schema
 reloads. Three modes:
 
 | Mode | `/graphql` is | Reaches the Commerce Integration Layer | Extra routes |
