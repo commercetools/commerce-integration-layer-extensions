@@ -30,9 +30,9 @@
  * setting whenever your handler would obviously no-op.
  *
  * ── Try it locally ─────────────────────────────────────────────────────────────
- *     pnpm dev                                                       # → MODIFY: capped
- *     commercetools integration-layer extension invoke --quantity 2   # → APPROVE, under the cap
- *     commercetools integration-layer extension invoke --config MAX_LINE_QUANTITY=1
+ *     pnpm dev                                                                       # → MODIFY: capped
+ *     commercetools integration-layer extension invoke-api-extension --quantity 2    # → APPROVE, under the cap
+ *     commercetools integration-layer extension invoke-api-extension --config MAX_LINE_QUANTITY=1
  */
 
 import type { Cart, ExtensionInput } from '@commercetools/platform-sdk';

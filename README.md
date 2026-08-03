@@ -92,7 +92,7 @@ schema extensions (`typeDefs` + `resolvers`), commercetools API Extensions
 From inside `examples/<name>` — the day-to-day loop:
 
 ```bash
-pnpm dev        # extension serve (or, for cart-quantity-cap, extension invoke)
+pnpm dev        # extension serve (or, for cart-quantity-cap, extension invoke-api-extension)
 pnpm build      # bundle to dist/extension.js
 pnpm validate   # local + remote validation
 pnpm push       # build + validate + publish
@@ -124,7 +124,7 @@ Authentication is `commercetools auth login` — there are no credentials in thi
 | Var | What it is |
 | --- | --- |
 | `INTEGRATION_LAYER_URL` | Override the extensions edge. Normally unset — it's derived from your login Region ([details](docs/cli.md#which-host-each-command-talks-to)) |
-| `EXTENSION_CONFIG_<KEY>` | Local-only: feeds `ctx.config.<KEY>` to `serve` and `invoke`, which have no Commerce Integration Layer to read config from ([details](docs/authoring.md#local-development)) |
+| `EXTENSION_CONFIG_<KEY>` | Local-only: feeds `ctx.config.<KEY>` to `serve` and `invoke-api-extension`, which have no Commerce Integration Layer to read config from ([details](docs/authoring.md#local-development)) |
 
 To target another Project, log in with a different `--project-key`, or pass
 `--project-key` to a command. `.env` is gitignored.

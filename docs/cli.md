@@ -62,7 +62,7 @@ Not logged in, an authenticated command fails immediately with
 
 | Needs a login | Runs offline |
 | --- | --- |
-| `explore`, `schema fetch`, `extension push`, `extension status`, `extension delete`, `config *` | `init`, `extension build`, `extension invoke`, `extension serve` (standalone) |
+| `explore`, `schema fetch`, `extension push`, `extension status`, `extension delete`, `config *` | `init`, `extension build`, `extension invoke-api-extension`, `extension serve` (standalone) |
 
 Two commands are conditional: `extension validate` needs a login only for its remote
 half (`--skip remote` makes it fully offline), and `extension serve` needs one only
@@ -253,11 +253,11 @@ commercetools integration-layer extension delete [-y]
 Removes the extension subgraph from the Project's published graph. Prompts unless
 `-y`/`--yes`.
 
-### `extension invoke`
+### `extension invoke-api-extension`
 
 ```
-commercetools integration-layer extension invoke [--action Create|Update] [--sku s] [--quantity n]
-                                                 [--config KEY=VALUE]...
+commercetools integration-layer extension invoke-api-extension [--action Create|Update] [--sku s] [--quantity n]
+                                                               [--config KEY=VALUE]...
 ```
 
 Fires a sample commercetools cart callback at the bundle's [API-Extension][apiext]
@@ -272,8 +272,8 @@ blocking errors. No deploy, no credentials, fully offline.
 | `--config` | repeatable `KEY=VALUE`, becomes `ctx.config` |
 
 ```bash
-commercetools integration-layer extension invoke --sku ALLOWED
-commercetools integration-layer extension invoke --quantity 25 --config MAX_LINE_QUANTITY=10
+commercetools integration-layer extension invoke-api-extension --sku ALLOWED
+commercetools integration-layer extension invoke-api-extension --quantity 25 --config MAX_LINE_QUANTITY=10
 ```
 
 Errors out if the bundle declares no `apiExtensions`.

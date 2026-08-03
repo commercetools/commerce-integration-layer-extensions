@@ -43,15 +43,15 @@ function describeResult(result: ApiExtensionResult): string {
   return "APPROVE";
 }
 
-export default class ExtensionInvoke extends Command {
+export default class ExtensionInvokeApiExtension extends Command {
   static override description =
     "Fire a sample commercetools cart callback at the bundle's API-Extension handlers";
 
   static override examples = [
-    "<%= config.bin %> integration-layer extension invoke",
-    "<%= config.bin %> integration-layer extension invoke --action Update --sku BLOCKED-SKU",
-    "<%= config.bin %> integration-layer extension invoke --quantity 25 --config MAX_LINE_QUANTITY=10",
-    "<%= config.bin %> integration-layer extension invoke --config MAX_QTY=5 --config REGION=eu",
+    "<%= config.bin %> integration-layer extension invoke-api-extension",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --action Update --sku BLOCKED-SKU",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --quantity 25 --config MAX_LINE_QUANTITY=10",
+    "<%= config.bin %> integration-layer extension invoke-api-extension --config MAX_QTY=5 --config REGION=eu",
   ];
 
   static override flags = {
@@ -78,7 +78,7 @@ export default class ExtensionInvoke extends Command {
   };
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(ExtensionInvoke);
+    const { flags } = await this.parse(ExtensionInvokeApiExtension);
 
     const config: Record<string, string> = {};
     for (const pair of flags.config ?? []) {

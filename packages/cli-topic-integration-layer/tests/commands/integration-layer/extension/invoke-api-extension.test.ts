@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { captureOutput } from "@oclif/test";
 import { describe, expect, it } from "vitest";
-import ExtensionInvoke from "../../../../src/commands/integration-layer/extension/invoke.js";
+import ExtensionInvokeApiExtension from "../../../../src/commands/integration-layer/extension/invoke-api-extension.js";
 
-/** Write an extension source into a temp package; return the invoke flags addressing it. */
+/** Write an extension source into a temp package; return the flags addressing it. */
 async function bundleFlags(source: string): Promise<string[]> {
   const dir = await mkdtemp(join(tmpdir(), "il-cli-invoke-"));
   await mkdir(join(dir, "src"), { recursive: true });
@@ -34,12 +34,12 @@ const QUANTITY_CAP = `
   ];
 `;
 
-describe("integration-layer extension invoke", () => {
+describe("integration-layer extension invoke-api-extension", () => {
   it("puts --quantity on the sample cart's line item, so a cap handler modifies it", async () => {
     const flags = await bundleFlags(QUANTITY_CAP);
     const { stdout } = await captureOutput(
       async () =>
-        ExtensionInvoke.run([...flags, "--quantity", "25", "--config", "MAX_LINE_QUANTITY=10"]),
+        ExtensionInvokeApiExtension.run([...flags, "--quantity", "25", "--config", "MAX_LINE_QUANTITY=10"]),
       { print: false },
     );
 
@@ -52,7 +52,7 @@ describe("integration-layer extension invoke", () => {
     const flags = await bundleFlags(QUANTITY_CAP);
     const { stdout } = await captureOutput(
       async () =>
-        ExtensionInvoke.run([...flags, "--quantity", "2", "--config", "MAX_LINE_QUANTITY=10"]),
+        ExtensionInvokeApiExtension.run([...flags, "--quantity", "2", "--config", "MAX_LINE_QUANTITY=10"]),
       { print: false },
     );
 
@@ -62,7 +62,7 @@ describe("integration-layer extension invoke", () => {
   it("defaults the sample quantity to 1", async () => {
     const flags = await bundleFlags(QUANTITY_CAP);
     const { stdout } = await captureOutput(
-      async () => ExtensionInvoke.run([...flags, "--config", "MAX_LINE_QUANTITY=10"]),
+      async () => ExtensionInvokeApiExtension.run([...flags, "--config", "MAX_LINE_QUANTITY=10"]),
       { print: false },
     );
 
