@@ -62,7 +62,7 @@ Not logged in, an authenticated command fails immediately with
 
 | Needs a login | Runs offline |
 | --- | --- |
-| `explore`, `schema fetch`, `extension push`, `extension status`, `extension delete`, `config *` | `init`, `extension build`, `extension invoke-api-extension`, `extension serve` (standalone) |
+| `explore`, `schema fetch`, `extension push`, `extension status`, `extension delete`, `config *` | `init`, `extension build`, `extension invoke-api-extension`, `extension sample-generate`, `extension serve` (standalone) |
 
 Two commands are conditional: `extension validate` needs a login only for its remote
 half (`--skip remote` makes it fully offline), and `extension serve` needs one only
@@ -280,7 +280,8 @@ prints each decision — `APPROVE`, `MODIFY` with the actions, or the blocking e
 deploy, no credentials, fully offline.
 
 `--input` is required: a JSON commercetools `ExtensionInput` with both `action` and
-`resource` (including `resource.typeId`). A handler fires only when its `resourceTypeId`
+`resource` (including `resource.typeId`). Use [`extension sample-generate`](#extension-sample-generate)
+to scaffold a realistic payload for a resource type and action. A handler fires only when its `resourceTypeId`
 and `actions` match the payload — others are reported as skipped. `--key` (repeatable)
 restricts invocation to named handlers. `ctx.config` comes from `EXTENSION_CONFIG_*` in
 the environment / `.env` / `--env-file`; a `--config` entry overrides the same key.
@@ -294,6 +295,7 @@ the environment / `.env` / `--env-file`; a `--config` entry overrides the same k
 | `--env-file` | optional dotenv path (default: load `.env` from cwd if present) |
 
 ```bash
+commercetools integration-layer extension sample-generate --resource-type cart --action Create --out ./payloads/cart-create.json
 commercetools integration-layer extension invoke-api-extension --input ./payloads/cart-create.json
 commercetools integration-layer extension invoke-api-extension --input ./payloads/cart-update.json --config MAX_LINE_QUANTITY=10
 commercetools integration-layer extension invoke-api-extension --input ./payloads/order-create.json --key order-tagger
@@ -302,6 +304,29 @@ commercetools integration-layer extension invoke-api-extension --input ./payload
 Errors out if the bundle declares no `apiExtensions`.
 
 [apiext]: https://docs.commercetools.com/integration-layer/api-extensions
+
+### `extension sample-generate`
+
+```
+commercetools integration-layer extension sample-generate --resource-type cart|order|… [--action Create|Update] [--out file.json] [--id id]
+```
+
+Writes a realistic commercetools `ExtensionInput` JSON sample for local handler testing.
+The output matches what [`extension invoke-api-extension`](#extension-invoke-api-extension)
+expects: a `{ action, resource }` object whose `resource.obj` carries the fields a handler
+typically reads (line items on carts/orders, `amountPlanned` on payments, and so on).
+
+| Flag | Default |
+| --- | --- |
+| `--resource-type` | **required** — `cart`, `order`, `payment`, `payment-method`, `customer`, `customer-group`, `quote-request`, `staged-quote`, `quote`, `business-unit`, `shopping-list` |
+| `--action` | `Create` (or `Update`; Update samples carry `version: 2`) |
+| `--out` | — write to this file; omit to print JSON to stdout |
+| `--id` | `sample-<resource-type>-id` |
+
+```bash
+commercetools integration-layer extension sample-generate --resource-type cart --action Create --out ./payloads/cart-create.json
+commercetools integration-layer extension sample-generate --resource-type order --action Update
+```
 
 ### `explore`
 
