@@ -5,6 +5,19 @@
 // `~/.commercetools/credentials` file `commercetools auth login` writes. The prerun hook
 // (`hooks/authentication.ts`) is what actually calls these; see its header for why the
 // topic has to do this itself instead of inheriting the host's copy.
+//
+// We reproduce those ~15 lines rather than import the host's, because they are NOT
+// available as a supported API. `@commercetools/cli` re-exports only `run` from its entry
+// (`src/index.ts`) — its `providers.ts` is private application wiring. The functions are
+// reachable solely by deep-importing compiled internals
+// (`@commercetools/cli/dist/providers.js`), which resolves only because that package
+// happens to declare no `exports` map — an unversioned path that can vanish on any patch.
+// Doing so would also invert the dependency graph: a topic pulling in the host CLI
+// *application* (a `bin` package) to reuse two factories. The classes composed below —
+// `CtpAuthenticationManager`, `CtpHttpAuthClient`, `FileBasedAuthenticationRepository`,
+// `CtpClientAuthenticationToken` — ARE the public exports of `@commercetools/cli-plugin-auth`
+// (the dependency we already declare), so composing them here is the supported path, not a
+// workaround: it is exactly what the host's `providers.ts` does, against the same public API.
 
 import os from "node:os";
 import path from "node:path";
