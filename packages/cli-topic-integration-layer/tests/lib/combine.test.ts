@@ -7,15 +7,25 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { discoverExtensions, buildCombinedBundle } from "../../src/lib/tooling/extensions.js";
+import {
+  DEFAULT_ENTRY_SEGMENT,
+  discoverExtensions,
+  entrySegmentFor,
+  buildCombinedBundle,
+} from "../../src/lib/tooling/extensions.js";
 import { loadBundleSource } from "../../src/lib/tooling/loadBundle.js";
 
 const FED = `extend schema @link(url: "https://specs.apollo.dev/federation/v2.3")`;
 
-async function writeExtension(root: string, name: string, source: string): Promise<void> {
-  const dir = join(root, "extensions", name, "src");
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, "extension.ts"), source, "utf8");
+async function writeExtension(
+  root: string,
+  name: string,
+  source: string,
+  segment = join("src", "extension.ts"),
+): Promise<void> {
+  const file = join(root, "extensions", name, segment);
+  await mkdir(join(file, ".."), { recursive: true });
+  await writeFile(file, source, "utf8");
 }
 
 describe("buildCombinedBundle", () => {
@@ -75,5 +85,55 @@ export const resolvers = { Query: { dup: () => "x" } };
     await expect(
       buildCombinedBundle(extensions, join(root, "dist", "extension.js")),
     ).rejects.toThrow(/dup/i);
+  });
+});
+
+describe("entrySegmentFor", () => {
+  const root = "/repo";
+
+  it("collapses the cwd-absolute --entry default to the plain per-package segment", () => {
+    expect(entrySegmentFor(root, join(root, "src", "extension.ts"))).toBe(DEFAULT_ENTRY_SEGMENT);
+  });
+
+  it("keeps a repo-relative --entry as the per-package segment", () => {
+    expect(entrySegmentFor(root, join("src", "main.ts"))).toBe(join("src", "main.ts"));
+  });
+
+  it("falls back to the default when --entry points outside the repo root", () => {
+    expect(entrySegmentFor(root, "/elsewhere/src/extension.ts")).toBe(DEFAULT_ENTRY_SEGMENT);
+  });
+});
+
+describe("discoverExtensions with a custom entry segment", () => {
+  it("finds packages by the given per-package source segment", async () => {
+    const root = await mkdtemp(join(tmpdir(), "il-entry-test-"));
+    const segment = join("src", "main.ts");
+    await writeExtension(
+      root,
+      "alpha",
+      `export const typeDefs = \`${FED}\n  type Query { alpha: String! }\`;
+export const resolvers = { Query: { alpha: () => "a" } };
+`,
+      segment,
+    );
+    // A sibling that only has the default entry must NOT be picked up under the custom segment.
+    await writeExtension(
+      root,
+      "beta",
+      `export const typeDefs = \`${FED}\n  type Query { beta: String! }\`;
+export const resolvers = { Query: { beta: () => "b" } };
+`,
+    );
+
+    const found = await discoverExtensions(root, "extensions", segment);
+    expect(found.map((e) => e.name)).toEqual(["alpha"]);
+    expect(found[0]?.entry).toBe(join(root, "extensions", "alpha", segment));
+
+    const outfile = join(root, "dist", "extension.js");
+    await buildCombinedBundle(found, outfile);
+    const mod = loadBundleSource(await readFile(outfile, "utf8")) as {
+      resolvers?: { Query?: Record<string, () => string> };
+    };
+    expect(mod.resolvers?.Query?.alpha?.()).toBe("a");
   });
 });

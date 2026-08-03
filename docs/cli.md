@@ -114,6 +114,13 @@ pnpm push                                            # → extension push --all
 extensions can each add fields to `Query`; they only clash if they declare the *same*
 field.
 
+`--entry` and `--out` keep the same meaning under `--all`, so a repo that doesn't use
+the defaults stays consistent. `--out` names the single combined artifact (there is no
+per-package output — that's the point of `--all`). `--entry` carries over as the
+per-package **source segment** applied under each `./extensions/*`: the default
+collapses to `src/extension.ts`, and `--entry src/main.ts` discovers and builds every
+package from its own `src/main.ts`.
+
 Without `--all`, every command operates on one extension, reading `src/extension.ts`
 and writing `dist/extension.js` relative to the directory you run it in — which is why
 the same commands work unchanged from inside any `examples/<name>`.
@@ -157,7 +164,7 @@ Offline; no login needed.
 ### `extension serve`
 
 ```
-commercetools integration-layer extension serve [-p 4000] [--compose] [--gateway] [--all] [--auth-url u]
+commercetools integration-layer extension serve [-p 4000] [--entry f] [--compose] [--gateway] [--all] [--auth-url u]
 ```
 
 A live GraphQL server with GraphiQL and esbuild watch, calling your resolvers with the

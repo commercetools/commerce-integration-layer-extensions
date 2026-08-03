@@ -8,7 +8,7 @@
 
 import { readdir, readFile, stat, writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import process from "node:process";
 import { buildSubgraphSchema, printSubgraphSchema } from "@apollo/subgraph";
 import { mergeTypeDefs } from "@graphql-tools/merge";
@@ -16,30 +16,51 @@ import { Kind, parse, type GraphQLSchema } from "graphql";
 import { buildBundle } from "./build.js";
 import { loadBundleSource, type EvaluatedBundle } from "./loadBundle.js";
 
+/** The per-package entry the CLI expects under each `extensions/*` when nothing overrides it. */
+export const DEFAULT_ENTRY_SEGMENT = join("src", "extension.ts");
+
+/**
+ * Reduce an `--entry` flag value to the path *within each* extension package that `--all`
+ * should build — the same source name applied uniformly across every discovered folder.
+ *
+ * The single-extension flag defaults to a cwd-absolute path (`<cwd>/src/extension.ts`),
+ * which only makes sense against N packages as its relative tail, so we relativise it to
+ * the monorepo root: the default collapses back to `src/extension.ts`, and a caller who
+ * passes a repo-relative `--entry` (e.g. `src/main.ts`) round-trips unchanged. Anything
+ * that doesn't sit under the root (an absolute path elsewhere) can't name a per-package
+ * source, so we fall back to the default rather than emit a `../…` segment.
+ */
+export function entrySegmentFor(root: string, entry: string): string {
+  const segment = relative(root, resolve(root, entry));
+  return segment === "" || segment.startsWith("..") ? DEFAULT_ENTRY_SEGMENT : segment;
+}
+
 /** An extension package discovered under the workspace's extensions/ directory. */
 export interface DiscoveredExtension {
   /** The package/directory name (used only for messages — the combined subgraph has one name). */
   name: string;
-  /** The extension source entry (`<dir>/src/extension.ts`). */
+  /** The extension source entry (`<dir>/<entrySegment>`, e.g. `<dir>/src/extension.ts`). */
   entry: string;
   /** The esbuild bundle output for a standalone build (`<dir>/dist/extension.js`). */
   outfile: string;
 }
 
 /**
- * Discover every extension package under `<root>/<dirName>` that has a
- * `src/extension.ts`. Sorted by name for stable, deterministic merge output.
+ * Discover every extension package under `<root>/<dirName>` that has an entry at
+ * `<pkg>/<entrySegment>` (default `src/extension.ts`). Sorted by name for stable,
+ * deterministic merge output.
  */
 export async function discoverExtensions(
   root: string,
   dirName: string,
+  entrySegment: string = DEFAULT_ENTRY_SEGMENT,
 ): Promise<DiscoveredExtension[]> {
   const base = join(root, dirName);
   const dirents = await readdir(base, { withFileTypes: true }).catch(() => []);
   const found: DiscoveredExtension[] = [];
   for (const dirent of dirents) {
     if (!dirent.isDirectory()) continue;
-    const entry = join(base, dirent.name, "src", "extension.ts");
+    const entry = join(base, dirent.name, entrySegment);
     const hasEntry = await stat(entry)
       .then((s) => s.isFile())
       .catch(() => false);
@@ -249,7 +270,9 @@ export interface BundleForFlags extends CombinedBuildResult {
 /**
  * The single build step shared by `build`/`validate`/`push`: bundle either the one
  * extension in the cwd (default) or — with `--all` — every extension under
- * `<extensionsDir>/*` merged into the one combined bundle a project deploys. Throws a
+ * `<extensionsDir>/*` merged into the one combined bundle a project deploys. `--entry`
+ * carries over to `--all` as the per-package source segment (see {@link entrySegmentFor}),
+ * so a repo with a non-default entry name builds uniformly across every folder. Throws a
  * clean message when `--all` finds nothing to build.
  */
 export async function bundleForFlags(opts: {
@@ -263,10 +286,12 @@ export async function bundleForFlags(opts: {
     const { outfile, sourceFiles } = await buildBundle(opts.entry, opts.out);
     return { outfile, sourceFiles, describe: opts.entry };
   }
-  const extensions = await discoverExtensions(opts.cwd ?? process.cwd(), opts.extensionsDir);
+  const cwd = opts.cwd ?? process.cwd();
+  const entrySegment = entrySegmentFor(cwd, opts.entry);
+  const extensions = await discoverExtensions(cwd, opts.extensionsDir, entrySegment);
   if (extensions.length === 0) {
     throw new Error(
-      `no extensions found under ./${opts.extensionsDir}/*/src/extension.ts — run --all from the monorepo root`,
+      `no extensions found under ./${opts.extensionsDir}/*/${entrySegment} — run --all from the monorepo root`,
     );
   }
   const { outfile, sourceFiles } = await buildCombinedBundle(extensions, opts.out);
