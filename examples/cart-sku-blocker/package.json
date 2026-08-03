@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "commercetools integration-layer extension build",
-    "dev": "commercetools integration-layer extension invoke",
+    "dev": "commercetools integration-layer extension invoke-api-extension",
     "validate": "commercetools integration-layer extension validate",
     "push": "commercetools integration-layer extension push",
     "typecheck": "tsc --noEmit"

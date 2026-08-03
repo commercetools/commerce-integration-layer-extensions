@@ -292,7 +292,7 @@ Two things they don't:
 
 ### Local development
 
-`serve` and `invoke` have no Commerce Integration Layer to read configuration from, so they take
+`serve` and `invoke-api-extension` have no Commerce Integration Layer to read configuration from, so they take
 it from `EXTENSION_CONFIG_*` environment variables — `EXTENSION_CONFIG_ALGOLIA_API_KEY`
 becomes `ctx.config.ALGOLIA_API_KEY`:
 
@@ -303,7 +303,7 @@ EXTENSION_CONFIG_ALGOLIA_API_KEY=search-only-key \
   pnpm dev
 ```
 
-`invoke` also takes them inline: `--config BLOCKED_SKU=NO-SELL` (repeatable).
+`invoke-api-extension` also takes them inline: `--config BLOCKED_SKU=NO-SELL` (repeatable).
 
 ### The configuration endpoint
 

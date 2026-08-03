@@ -17,7 +17,7 @@
  * when unset it falls back to the constant below.
  *
  * Try it locally without deploying:  `pnpm dev`  (→ `commercetools integration-layer
- * extension invoke`) fires a sample cart at the handler. Add `--sku OTHER` to send a
+ * extension invoke-api-extension`) fires a sample cart at the handler. Add `--sku OTHER` to send a
  * different SKU and watch it pass. Then `pnpm validate` / `pnpm push`.
  *
  * A handler returns the plain runtime contract: `{}` to approve, `{ errors: [...] }`
