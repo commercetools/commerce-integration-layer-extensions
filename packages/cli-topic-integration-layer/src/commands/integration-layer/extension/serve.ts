@@ -12,6 +12,12 @@
 //                       local extension + the deployed Commerce Integration Layer.
 // --compose/--gateway reach the Commerce Integration Layer, so they need the auth flags/env
 // (ilFlags); --gateway also mints an anonymous session for its calls.
+//
+// This serves only the bundle's GraphQL subgraph. The bundle's API-Extension handlers
+// are served by the sibling `serve-api-extension` command, kept separate ON PURPOSE:
+// that command logs in and registers a callback in commercetools, so isolating it keeps
+// `serve` a safe, login-free local server that can never register anything in
+// commercetools by accident.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { readFile } from "node:fs/promises";

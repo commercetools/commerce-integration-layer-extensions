@@ -341,6 +341,11 @@ already has *any* API Extension, owns everything it creates under the `il-locald
 prefix, and **deletes** those on exit. Point it at a dedicated dev/sandbox Project. Needs a
 `manage_project` login (it calls the commercetools API directly).
 
+This is a **separate command from `serve` on purpose** (not a `serve --api-extensions`
+flag): `serve` is a safe, login-free local server, whereas this one logs in and registers
+a callback in commercetools. Keeping them apart makes that registration an explicit,
+deliberate act — running `serve` can never register anything in commercetools by accident.
+
 | Flag | Default | Notes |
 | --- | --- | --- |
 | `--public-url` | — | **required** (unless `--cleanup`); the tunnel's base URL. commercetools calls `<public-url>/api-extensions` |

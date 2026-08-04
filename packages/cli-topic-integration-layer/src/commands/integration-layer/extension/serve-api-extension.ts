@@ -7,6 +7,12 @@
 // debugger attached, breakpoints, and hot-reload. It is the API-Extension analogue of
 // `serve` (which does the same for the GraphQL subgraph).
 //
+// WHY A SEPARATE COMMAND (not a `serve --api-extensions` flag): unlike `serve` — a
+// safe, login-free, purely LOCAL dev server — this command logs in and MUTATES the
+// commercetools project (it registers, reconciles, and deletes API Extensions). Keeping
+// it a distinct command makes that side effect an explicit, deliberate act: running
+// `serve` can never register a callback in commercetools by accident.
+//
 // commercetools is in the cloud, so it must reach a PUBLIC https URL: run your own
 // tunnel (e.g. `ngrok http 4000`, `cloudflared`) and pass its address as
 // `--public-url`.
