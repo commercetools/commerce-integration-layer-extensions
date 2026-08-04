@@ -310,6 +310,7 @@ Errors out if the bundle declares no `apiExtensions`.
 ```
 commercetools integration-layer extension serve-api-extension --public-url <url> [-p 4000]
                                                               [--config KEY=VALUE]...
+                                                              [--all] [--extensions-dir extensions]
                                                               [--entry f] [--out f] [--cleanup] [--env-file path]
 ```
 
@@ -336,6 +337,12 @@ No `ngrok`? Any tunnel works, including zero-install SSH ones — e.g.
 `ctx.config` comes from `EXTENSION_CONFIG_*` / `.env` / `--env-file`, with `--config`
 overriding a key (same as `invoke-api-extension`).
 
+**Monorepo (`--all`).** Like `serve`/`build`/`push`, `--all` builds + watches every
+package under `./extensions/*` and serves the **one combined bundle** a Project deploys —
+every package's `apiExtensions` concatenated — registering the whole set (and re-merging
+on any package's edit). Without it, it serves the single `--entry` bundle in the cwd. A
+given API-Extension `key` must be unique across packages (a Project ships one bundle).
+
 **Safety — it never disturbs a real Extension.** Before registering, it inspects the
 Project's existing Extensions and **refuses** only if one already triggers on the *same
 resource + action* it would register (a collision commercetools rejects anyway);
@@ -353,11 +360,14 @@ deliberate act — running `serve` can never register anything in commercetools 
 | `--public-url` | — | **required** (unless `--cleanup`); the tunnel's base URL. commercetools calls `<public-url>/api-extensions` |
 | `-p`, `--port` | `4000` | local port to listen on |
 | `--config` | — | repeatable `KEY=VALUE`, becomes `ctx.config` (overrides env / `.env`) |
+| `--all` | `false` | serve + register the combined bundle from every `./extensions/*` package (the deployed shape) |
+| `--extensions-dir` | `extensions` | directory holding the extension packages (used with `--all`) |
 | `--cleanup` | `false` | remove leftover `il-localdev-*` Extensions and exit (does not serve) |
 | `--env-file` | — | optional dotenv path (default: load `.env` from cwd if present) |
 
-Errors out if the bundle declares no `apiExtensions`, or if an existing Extension
-collides with a resource/action it would register.
+Errors out if the bundle declares no `apiExtensions`, if an existing Extension collides
+with a resource/action it would register, or (with `--all`) if two packages declare the
+same API-Extension `key`.
 
 ### `extension create-api-extension-input`
 

@@ -17,6 +17,10 @@
 // tunnel (e.g. `ngrok http 4000`, `cloudflared`) and pass its address as
 // `--public-url`.
 //
+// MONOREPO: in a repo of `extensions/*` packages, `--all` serves + registers the ONE
+// combined bundle a project deploys — every package's `apiExtensions` concatenated (the
+// same shape as `serve --all` / `push --all`). Without it, the single `--entry` bundle.
+//
 // SAFETY MODEL (deliberately strict — these callbacks make commercetools call YOUR
 // laptop before persisting a write):
 //   - It REFUSES to run if the project already has an API Extension that triggers on the
@@ -38,6 +42,11 @@ import {
   HOST_PROVIDED_EXTERNALS,
 } from "../../../lib/tooling/build.js";
 import { loadBundleSource, type EvaluatedBundle } from "../../../lib/tooling/loadBundle.js";
+import {
+  discoverExtensions,
+  entrySegmentFor,
+  type DiscoveredExtension,
+} from "../../../lib/tooling/extensions.js";
 import { extractApiExtensions } from "../../../lib/tooling/apiExtensionDispatch.js";
 import { createApiExtensionHandler } from "../../../lib/apiExtensionServer.js";
 import type { ApiExtensionDefinition, ExtensionContext } from "../../../lib/tooling/apiExtension.js";
@@ -66,6 +75,7 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
   static override examples = [
     "<%= config.bin %> integration-layer extension serve-api-extension --public-url https://abc123.ngrok.app",
     "<%= config.bin %> integration-layer extension serve-api-extension --public-url https://abc123.ngrok.app --port 4000 --config MAX_LINE_QUANTITY=10",
+    "<%= config.bin %> integration-layer extension serve-api-extension --all --public-url https://abc123.ngrok.app",
     "<%= config.bin %> integration-layer extension serve-api-extension --cleanup",
   ];
 
@@ -75,8 +85,21 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
         "the PUBLIC https base URL of a tunnel to this machine (e.g. from `ngrok http <port>`); commercetools calls `<public-url>/api-extensions`",
     }),
     port: Flags.integer({ char: "p", description: "local port to listen on", default: 4000 }),
-    entry: Flags.string({ description: "extension entry source file", default: defaultEntry() }),
+    entry: Flags.string({
+      description:
+        "extension entry source file (with --all: the per-package source segment applied under each ./extensions/*)",
+      default: defaultEntry(),
+    }),
     out: Flags.string({ description: "bundle output file", default: defaultOutfile() }),
+    all: Flags.boolean({
+      description:
+        "serve + register the ONE combined bundle merged from every extension under ./extensions/* (the deployed shape)",
+      default: false,
+    }),
+    "extensions-dir": Flags.string({
+      description: "directory holding the extension packages (used with --all)",
+      default: "extensions",
+    }),
     config: Flags.string({
       description:
         "a ctx.config entry as KEY=VALUE (repeatable); overrides EXTENSION_CONFIG_* from the environment / .env",
@@ -135,12 +158,41 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
     };
     const makeCtx = (): ExtensionContext => ({ now: () => Date.now(), config });
 
-    // Initial one-shot build so we can validate the bundle declares handlers, learn the
-    // resource/action triggers it wants, and register them BEFORE opening a port.
-    let current = await this.buildOnce(flags.entry, flags.out);
+    // Initial build so we can validate the bundle declares handlers, learn the
+    // resource/action triggers it wants, and register them BEFORE opening a port. One
+    // entry, or — with --all — every extensions/* package built and concatenated into the
+    // one combined bundle a project deploys. `modules` holds each package's handlers by
+    // name so a hot-reload can recompute the combined set cheaply.
+    const root = process.cwd();
+    const modules = new Map<string, ApiExtensionDefinition[]>();
+    let extensions: DiscoveredExtension[] = [];
+    if (flags.all) {
+      const entrySegment = entrySegmentFor(root, flags.entry);
+      extensions = await discoverExtensions(root, flags["extensions-dir"], entrySegment);
+      if (extensions.length === 0) {
+        this.error(
+          `no extensions found under ./${flags["extensions-dir"]}/*/${entrySegment} — run --all from the monorepo root`,
+        );
+      }
+      for (const ext of extensions) {
+        await buildBundle(ext.entry, ext.outfile);
+        modules.set(ext.name, extractApiExtensions(loadBundleSource(await readFile(ext.outfile, "utf8"))));
+      }
+    } else {
+      modules.set(flags.entry, await this.buildOnce(flags.entry, flags.out));
+    }
+
+    let current: ApiExtensionDefinition[];
+    try {
+      current = this.combineApiExtensions(modules);
+    } catch (err) {
+      this.error((err as Error).message);
+    }
     if (current.length === 0) {
       this.error(
-        "this bundle declares no `apiExtensions` — nothing to serve (author them with `defineApiExtension`)",
+        flags.all
+          ? `no extension under ./${flags["extensions-dir"]}/* declares \`apiExtensions\` — nothing to serve`
+          : "this bundle declares no `apiExtensions` — nothing to serve (author them with `defineApiExtension`)",
       );
     }
 
@@ -186,11 +238,17 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
 
     // Hot-reload: rebuild on every source edit, swap the live handlers, and reconcile
     // the registered Extensions if the trigger shapes changed (a handler-body edit
-    // needs no commercetools round trip).
-    const watchCtx = await this.watchEntry(flags.entry, flags.out, async (mod) => {
-      const next = extractApiExtensions(mod);
+    // needs no commercetools round trip). --all watches every package and re-concatenates.
+    const applyReload = async (label: string): Promise<void> => {
+      let next: ApiExtensionDefinition[];
+      try {
+        next = this.combineApiExtensions(modules);
+      } catch (err) {
+        this.warn(`${(err as Error).message} — keeping the previous handlers`);
+        return;
+      }
       if (next.length === 0) {
-        this.warn("reloaded bundle declares no `apiExtensions` — keeping the previous handlers");
+        this.warn("reloaded extensions declare no `apiExtensions` — keeping the previous handlers");
         return;
       }
       current = next;
@@ -199,8 +257,27 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
       } catch (err) {
         this.warn(`could not update registered Extensions: ${(err as Error).message}`);
       }
-      this.log(`✓ reloaded ${flags.entry}`);
-    });
+      this.log(`✓ reloaded ${label}`);
+    };
+
+    const watchers: BuildContext[] = [];
+    if (flags.all) {
+      for (const ext of extensions) {
+        watchers.push(
+          await this.watchEntry(ext.entry, ext.outfile, async (mod) => {
+            modules.set(ext.name, extractApiExtensions(mod));
+            await applyReload(ext.name);
+          }),
+        );
+      }
+    } else {
+      watchers.push(
+        await this.watchEntry(flags.entry, flags.out, async (mod) => {
+          modules.set(flags.entry, extractApiExtensions(mod));
+          await applyReload(flags.entry);
+        }),
+      );
+    }
 
     this.log(
       [
@@ -208,7 +285,9 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
         `   local     http://localhost:${flags.port}/api-extensions`,
         `   public    ${callbackUrl}`,
         `   handlers  ${current.map((h) => `${h.key} (${h.resourceTypeId}/${h.actions.join(",")})`).join(", ")}`,
-        `   watching  ${flags.entry} — edit and save to hot-reload`,
+        flags.all
+          ? `   watching  ${extensions.length} extension(s): ${extensions.map((e) => e.name).join(", ")} — edit and save to hot-reload`
+          : `   watching  ${flags.entry} — edit and save to hot-reload`,
         "   do a matching cart/order write in the project; Ctrl-C to deregister and exit\n",
       ].join("\n"),
     );
@@ -223,7 +302,7 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
           `could not remove every registered Extension (${err.message}) — run \`--cleanup\` to finish`,
         ),
       );
-      await watchCtx.dispose().catch(() => {});
+      await Promise.all(watchers.map((w) => w.dispose().catch(() => {})));
       server.close(() => process.exit(0));
     };
     process.on("SIGINT", () => void shutdown());
@@ -292,6 +371,32 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
         this.warn(`could not remove '${e.key}': ${(err as Error).message}`);
       }
     }
+  }
+
+  /**
+   * Concatenate every package's `apiExtensions` into the one set a project deploys (the
+   * same flatMap `buildCombinedBundle` does), rejecting a key declared by two different
+   * extensions: a project ships one bundle, so each API-Extension key — and thus its
+   * `il-localdev-` registration — must be unique across packages.
+   */
+  private combineApiExtensions(
+    modules: Map<string, ApiExtensionDefinition[]>,
+  ): ApiExtensionDefinition[] {
+    const combined: ApiExtensionDefinition[] = [];
+    const owner = new Map<string, string>();
+    for (const [name, defs] of modules) {
+      for (const def of defs) {
+        const prev = owner.get(def.key);
+        if (prev !== undefined && prev !== name) {
+          throw new Error(
+            `extensions '${prev}' and '${name}' both declare an API Extension keyed '${def.key}' — each API-Extension key must be unique across extensions`,
+          );
+        }
+        owner.set(def.key, name);
+        combined.push(def);
+      }
+    }
+    return combined;
   }
 
   /** One-shot build + load; returns the bundle's declared handlers. */
