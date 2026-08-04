@@ -30,7 +30,7 @@ commercetools integration-layer init [DIR]                  # scaffold an extens
 
 commercetools integration-layer extension build             # bundle src/extension.ts → dist [offline]
 commercetools integration-layer extension serve             # local dev server; allowlist-gated fetch when online + logged in
-commercetools integration-layer extension invoke-api-extension   # fire an API-Extension callback (sample or --input) [offline]
+commercetools integration-layer extension invoke-api-extension   # fire an API-Extension callback at the local bundle [offline], or --deployed via the IL
 
 commercetools integration-layer explore                     # local GraphQL explorer over your deployed edge
 commercetools integration-layer schema fetch                # the Project's core-subgraph SDL
