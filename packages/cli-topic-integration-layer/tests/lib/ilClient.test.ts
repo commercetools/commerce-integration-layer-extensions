@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { getAllowlist, putAllowlist, type AuthFetch } from "../../src/lib/ilClient.js";
+import {
+  getAllowlist,
+  putAllowlist,
+  invokeDeployedApiExtension,
+  type AuthFetch,
+} from "../../src/lib/ilClient.js";
 
 const BASE = "https://extensions.integration-layer.eu-central-1.aws.commercetools.com";
 const PROJECT = "my-project";
@@ -71,5 +76,49 @@ describe("putAllowlist", () => {
       new Response(JSON.stringify({ error: "'*' is too broad" }), { status: 400 }),
     );
     await expect(putAllowlist(BASE, PROJECT, authFetch, ["*"])).rejects.toThrow(/400.*too broad/);
+  });
+});
+
+describe("invokeDeployedApiExtension", () => {
+  const INPUT = { action: "Create", resource: { typeId: "cart", id: "c-1" } };
+
+  it("POSTs the ExtensionInput to the invoke route and returns the { status, result } envelope", async () => {
+    const authFetch = stubFetch(
+      new Response(JSON.stringify({ status: 200, result: {} }), { status: 200 }),
+    );
+
+    const result = await invokeDeployedApiExtension(BASE, PROJECT, authFetch, INPUT);
+
+    expect(result).toEqual({ status: 200, result: {} });
+    const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe(`${BASE}/${PROJECT}/extension/api-extensions/invoke`);
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual(INPUT);
+  });
+
+  it("passes a connector BLOCK (status 400 in the envelope) through as data, not an error", async () => {
+    const authFetch = stubFetch(
+      new Response(
+        JSON.stringify({ status: 400, result: { errors: [{ code: "X", message: "no" }] } }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await invokeDeployedApiExtension(BASE, PROJECT, authFetch, INPUT);
+
+    // The IL request succeeded (HTTP 200); the connector's 400 is the verdict inside.
+    expect(result.status).toBe(400);
+    expect(result.result).toEqual({ errors: [{ code: "X", message: "no" }] });
+  });
+
+  it("throws with the IL's error message when the deployed extension can't be reached", async () => {
+    const authFetch = stubFetch(
+      new Response(JSON.stringify({ error: "No extensions-sandbox deployment found" }), {
+        status: 404,
+      }),
+    );
+    await expect(invokeDeployedApiExtension(BASE, PROJECT, authFetch, INPUT)).rejects.toThrow(
+      /404.*No extensions-sandbox deployment/,
+    );
   });
 });

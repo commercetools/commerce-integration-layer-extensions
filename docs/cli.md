@@ -141,7 +141,9 @@ commercetools integration-layer init [DIRECTORY] [--template basic] [-f]
 
 Scaffolds an extensions monorepo: a pnpm workspace with the root scripts wired to the
 `--all` flow, shared TypeScript and ESLint config, and one buildable `hello-world`
-extension under `extensions/`. Everything is vendored inline — no network fetch.
+extension under `extensions/` with a colocated Vitest test (`src/extension.test.ts`)
+that calls its resolver directly. Run the suites with `pnpm test` (per-package or from
+the root). Everything is vendored inline — no network fetch.
 
 | Argument / flag | Default | Notes |
 | --- | --- | --- |
@@ -273,35 +275,54 @@ Removes the extension subgraph from the Project's published graph. Prompts unles
 ```
 commercetools integration-layer extension invoke-api-extension --input file.json [--key k]...
                                                                [--all] [--config KEY=VALUE]... [--env-file path]
+commercetools integration-layer extension invoke-api-extension --deployed --input file.json [--project-key key]
 ```
 
-Fires a commercetools callback at the bundle's [API-Extension][apiext] handlers and
-prints each decision — `APPROVE`, `MODIFY` with the actions, or the blocking errors. No
-deploy, no credentials, fully offline.
+Fires a commercetools callback at the [API-Extension][apiext] handlers and prints the
+decision — `APPROVE`, `MODIFY` with the actions, or the blocking errors. Two targets:
 
-`--input` is required: a JSON commercetools `ExtensionInput` with both `action` and
-`resource` (including `resource.typeId`). Use [`extension create-api-extension-input`](#extension-create-api-extension-input)
-to scaffold a realistic payload for a resource type and action. A handler fires only when its `resourceTypeId`
-and `actions` match the payload — others are reported as skipped. `--key` (repeatable)
-restricts invocation to named handlers. `ctx.config` comes from `EXTENSION_CONFIG_*` in
-the environment / `.env` / `--env-file`; a `--config` entry overrides the same key.
+- **local (default)** — runs the bundle's handlers **in-process**. No deploy, no
+  credentials, fully offline. Each handler is reported separately (`--key` narrows to
+  named ones), and `ctx.config` comes from `EXTENSION_CONFIG_*` in the environment /
+  `.env` / `--env-file` (a `--config` entry overrides the same key).
+- **`--deployed`** — fires the callback at the project's **deployed** extension through
+  the Commerce Integration Layer, exercising the LIVE code commercetools calls on a
+  write. Needs a `commercetools auth login` (the connector's callback is signed with a
+  shared secret only the integration layer can mint, so the integration layer proxies
+  and signs the call). **Nothing is persisted** — it is the callback in isolation.
+
+`--input` is required for both: a JSON commercetools `ExtensionInput` with both `action`
+and `resource` (including `resource.typeId`). Use [`extension create-api-extension-input`](#extension-create-api-extension-input)
+to scaffold a realistic payload. A handler fires only when its `resourceTypeId` and
+`actions` match the payload — locally, others are reported as skipped.
+
+`--deployed` uses the deployed code and the project's **stored** config, and returns the
+connector's **single merged verdict** (there is no per-handler breakdown on the deployed
+path), so it can't be combined with the local-bundle flags `--all`, `--extensions-dir`,
+`--entry`, `--out`, `--config`, or `--key`.
 
 | Flag | Default |
 | --- | --- |
 | `--input` | **required** — path to a JSON `ExtensionInput` (`{ action, resource }`) |
-| `--key` | — repeatable; only invoke handlers with these keys |
-| `--all`, `--extensions-dir` | invoke the merged bundle — see [`--all`](#one-bundle-per-project-and---all) |
-| `--config` | repeatable `KEY=VALUE`, becomes `ctx.config` (overrides env / `.env`) |
+| `--deployed` | fire at the project's DEPLOYED extension via the Commerce Integration Layer (needs login); local (in-process) otherwise |
+| `--key` | — repeatable; only invoke handlers with these keys (local only) |
+| `--all`, `--extensions-dir` | invoke the merged bundle — see [`--all`](#one-bundle-per-project-and---all) (local only) |
+| `--config` | repeatable `KEY=VALUE`, becomes `ctx.config` (overrides env / `.env`; local only) |
 | `--env-file` | optional dotenv path (default: load `.env` from cwd if present) |
+| `--project-key`, `--integration-layer-url` | `--deployed` only — override the login's project / IL edge |
 
 ```bash
 commercetools integration-layer extension create-api-extension-input --resource-type cart --action Create --out ./payloads/cart-create.json
 commercetools integration-layer extension invoke-api-extension --input ./payloads/cart-create.json
 commercetools integration-layer extension invoke-api-extension --input ./payloads/cart-update.json --config MAX_LINE_QUANTITY=10
 commercetools integration-layer extension invoke-api-extension --input ./payloads/order-create.json --key order-tagger
+# Against the LIVE deployed extension (nothing is persisted):
+commercetools integration-layer extension invoke-api-extension --deployed --input ./payloads/cart-create.json
 ```
 
-Errors out if the bundle declares no `apiExtensions`.
+Locally, errors out if the bundle declares no `apiExtensions`. With `--deployed`, errors
+if the project isn't enrolled or its extension isn't deployed (no deployment / no service
+URL yet).
 
 [apiext]: https://docs.commercetools.com/integration-layer/api-extensions
 
