@@ -9,9 +9,7 @@
 //
 // commercetools is in the cloud, so it must reach a PUBLIC https URL: run your own
 // tunnel (e.g. `ngrok http 4000`, `cloudflared`) and pass its address as
-// `--public-url`. The command mints a random shared secret, gates the local callback
-// on it, and registers it as the Extension's Authorization header — so nothing but
-// commercetools (carrying that secret) can invoke your handlers.
+// `--public-url`.
 //
 // SAFETY MODEL (deliberately strict — these callbacks make commercetools call YOUR
 // laptop before persisting a write):
@@ -22,7 +20,6 @@
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
 import process from "node:process";
 import { Flags } from "@oclif/core";
 import { context as esbuildContext, type BuildContext } from "esbuild";
@@ -69,11 +66,6 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
         "the PUBLIC https base URL of a tunnel to this machine (e.g. from `ngrok http <port>`); commercetools calls `<public-url>/api-extensions`",
     }),
     port: Flags.integer({ char: "p", description: "local port to listen on", default: 4000 }),
-    secret: Flags.string({
-      description:
-        "shared secret commercetools must present on the callback (also settable via IL_DEBUG_EXT_SECRET); a random one is minted per run if omitted",
-      env: "IL_DEBUG_EXT_SECRET",
-    }),
     entry: Flags.string({ description: "extension entry source file", default: defaultEntry() }),
     out: Flags.string({ description: "bundle output file", default: defaultOutfile() }),
     config: Flags.string({
@@ -157,15 +149,11 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
       );
     }
 
-    const secret = flags.secret ?? randomBytes(24).toString("hex");
-    const headerValue = `Bearer ${secret}`;
-
     // Start listening BEFORE registering, so the destination is live the instant
     // commercetools learns about it.
     const registered: RegisteredExtension[] = [];
     const server = createServer(
       createApiExtensionHandler({
-        secret,
         makeCtx,
         handlers: () => current,
         onDispatch: (summary) => this.log(`→ ${summary}`),
@@ -177,7 +165,7 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
       server.listen(flags.port, resolve);
     }).catch((err: Error) => this.error(`could not listen on port ${flags.port}: ${err.message}`));
 
-    await this.reconcile(apiBaseUrl, projectKey, authFetch, callbackUrl, headerValue, registered, current);
+    await this.reconcile(apiBaseUrl, projectKey, authFetch, callbackUrl, registered, current);
 
     // Hot-reload: rebuild on every source edit, swap the live handlers, and reconcile
     // the registered Extensions if the trigger shapes changed (a handler-body edit
@@ -190,7 +178,7 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
       }
       current = next;
       try {
-        await this.reconcile(apiBaseUrl, projectKey, authFetch, callbackUrl, headerValue, registered, current);
+        await this.reconcile(apiBaseUrl, projectKey, authFetch, callbackUrl, registered, current);
       } catch (err) {
         this.warn(`could not update registered Extensions: ${(err as Error).message}`);
       }
@@ -203,7 +191,6 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
         `   local     http://localhost:${flags.port}/api-extensions`,
         `   public    ${callbackUrl}`,
         `   handlers  ${current.map((h) => `${h.key} (${h.resourceTypeId}/${h.actions.join(",")})`).join(", ")}`,
-        `   secret    commercetools authenticates with a per-run bearer (${flags.secret ? "from --secret/IL_DEBUG_EXT_SECRET" : "randomly minted"})`,
         `   watching  ${flags.entry} — edit and save to hot-reload`,
         "   do a matching cart/order write in the project; Ctrl-C to deregister and exit\n",
       ].join("\n"),
@@ -235,7 +222,6 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
     projectKey: string,
     authFetch: AuthFetch,
     callbackUrl: string,
-    headerValue: string,
     registered: RegisteredExtension[],
     desired: ApiExtensionDefinition[],
   ): Promise<void> {
@@ -251,7 +237,7 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
         apiBaseUrl,
         projectKey,
         authFetch,
-        draftFor(decl, callbackUrl, headerValue),
+        draftFor(decl, callbackUrl),
       );
       const entry: RegisteredExtension = {
         authorKey: decl.key,

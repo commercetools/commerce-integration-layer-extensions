@@ -3,26 +3,17 @@
 // separate from the oclif command so it can be unit-tested by driving a real server
 // with a stub set of handlers — no login, no tunnel, no commercetools.
 //
-// The request is authenticated by a shared-secret bearer (the same value registered
-// as the Extension's Authorization header), then handed to the shared dispatcher,
-// whose result is written back in the commercetools response contract (empty 200
-// approve / 200 `{ actions }` / 400 `{ errors }`, or 500 when a handler throws).
+// The parsed callback is handed to the shared dispatcher, whose result is written back
+// in the commercetools response contract (empty 200 approve / 200 `{ actions }` /
+// 400 `{ errors }`, or 500 when a handler throws).
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Buffer } from "node:buffer";
-import { timingSafeEqual } from "node:crypto";
 import { dispatchApiExtension } from "./tooling/apiExtensionDispatch.js";
 import type { ApiExtensionDefinition, ExtensionContext } from "./tooling/apiExtension.js";
 
 /** Cap the callback body so a malformed/oversized POST can't exhaust memory. */
 export const MAX_BODY_BYTES = 1_048_576; // 1 MiB — well above any real ExtensionInput.
-
-/** Constant-time check that the callback carried the shared secret we registered. */
-export function verifyBearer(header: string | undefined, secret: string): boolean {
-  const expected = `Bearer ${secret}`;
-  if (typeof header !== "string" || header.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(header), Buffer.from(expected));
-}
 
 /** Read a request body as a string, rejecting once it exceeds `maxBytes`. */
 export function readBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<string> {
@@ -50,8 +41,6 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 }
 
 export interface ApiExtensionHandlerOptions {
-  /** The shared secret commercetools must present (verified against `Bearer <secret>`). */
-  secret: string;
   /** The per-call capability context (fresh per request, so config edits are picked up). */
   makeCtx: () => ExtensionContext;
   /** The current handlers (a getter, so a hot-reload swap is seen without rewiring). */
@@ -64,13 +53,13 @@ export interface ApiExtensionHandlerOptions {
 
 /**
  * Build the `(req, res)` listener for the local callback server. Exported (rather than
- * inlined in the command) so tests can exercise the auth gate + response mapping
- * against a real HTTP server.
+ * inlined in the command) so tests can exercise the response mapping against a real
+ * HTTP server.
  */
 export function createApiExtensionHandler(
   options: ApiExtensionHandlerOptions,
 ): (req: IncomingMessage, res: ServerResponse) => void {
-  const { secret, makeCtx, handlers, onDispatch, onError } = options;
+  const { makeCtx, handlers, onDispatch, onError } = options;
 
   return (req, res) => {
     void handle(req, res);
@@ -85,12 +74,6 @@ export function createApiExtensionHandler(
     }
     if (req.method !== "POST" || path !== "/api-extensions") {
       sendJson(res, 404, { errors: [{ code: "General", message: "not found" }] });
-      return;
-    }
-    if (!verifyBearer(req.headers.authorization, secret)) {
-      sendJson(res, 401, {
-        errors: [{ code: "Unauthorized", message: "Invalid extension credentials" }],
-      });
       return;
     }
 

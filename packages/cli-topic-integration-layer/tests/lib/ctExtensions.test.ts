@@ -59,21 +59,20 @@ describe("managed keys", () => {
 });
 
 describe("draftFor", () => {
-  it("maps a declaration to an HTTP destination with the shared-secret header", () => {
-    const draft = draftFor(decl("quantity-cap", { condition: "true" }), `${API}/x/api-extensions`, "Bearer s3cret");
+  it("maps a declaration to an HTTP destination", () => {
+    const draft = draftFor(decl("quantity-cap", { condition: "true" }), `${API}/x/api-extensions`);
     expect(draft).toEqual({
       key: "il-localdev-quantity-cap",
       destination: {
         type: "HTTP",
         url: `${API}/x/api-extensions`,
-        authentication: { type: "AuthorizationHeader", headerValue: "Bearer s3cret" },
       },
       triggers: [{ resourceTypeId: "cart", actions: ["Create", "Update"], condition: "true" }],
     });
   });
 
   it("omits condition when the declaration has none", () => {
-    const draft = draftFor(decl("k"), "https://u/api-extensions", "Bearer s");
+    const draft = draftFor(decl("k"), "https://u/api-extensions");
     expect(draft.triggers[0]).not.toHaveProperty("condition");
   });
 });
@@ -132,7 +131,7 @@ describe("listExtensions / createExtension / deleteExtension", () => {
     const authFetch = stubFetch(
       new Response(JSON.stringify({ id: "new-id", key: "il-localdev-a", version: 1 }), { status: 201 }),
     );
-    const draft = draftFor(decl("a"), "https://u/api-extensions", "Bearer s");
+    const draft = draftFor(decl("a"), "https://u/api-extensions");
     const created = await createExtension(API, PROJECT, authFetch, draft);
     expect(created).toEqual({ id: "new-id", key: "il-localdev-a", version: 1 });
     const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -155,7 +154,7 @@ describe("listExtensions / createExtension / deleteExtension", () => {
   it("throws with status + body on a non-2xx create", async () => {
     const authFetch = stubFetch(new Response("duplicate key", { status: 409 }));
     await expect(
-      createExtension(API, PROJECT, authFetch, draftFor(decl("a"), "https://u/api-extensions", "Bearer s")),
+      createExtension(API, PROJECT, authFetch, draftFor(decl("a"), "https://u/api-extensions")),
     ).rejects.toThrow(/409.*duplicate key/);
   });
 });

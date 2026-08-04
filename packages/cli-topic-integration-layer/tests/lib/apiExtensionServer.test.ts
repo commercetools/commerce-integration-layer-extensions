@@ -1,6 +1,6 @@
-// Boots the real callback server on a real port and drives it over real HTTP. The
-// auth gate, body validation, and commercetools response mapping are all under test;
-// only the handlers are a stub.
+// Boots the real callback server on a real port and drives it over real HTTP. Body
+// validation and the commercetools response mapping are under test; only the handlers
+// are a stub.
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -8,8 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { createApiExtensionHandler } from "../../src/lib/apiExtensionServer.js";
 import type { ApiExtensionDefinition } from "../../src/lib/tooling/apiExtension.js";
-
-const SECRET = "s3cret-token";
 
 const capHandler: ApiExtensionDefinition = {
   key: "quantity-cap",
@@ -35,7 +33,6 @@ beforeEach(async () => {
   config = {};
   server = createServer(
     createApiExtensionHandler({
-      secret: SECRET,
       makeCtx: () => ({ now: () => 0, config }),
       handlers: () => handlers,
     }),
@@ -49,12 +46,10 @@ afterEach(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });
 
-// `authorization` defaults to a valid bearer; pass `null` to omit it entirely (passing
-// `undefined` would trigger the default, so a distinct sentinel is needed).
-function post(body: unknown, authorization: string | null = `Bearer ${SECRET}`): Promise<Response> {
+function post(body: unknown): Promise<Response> {
   return fetch(`${url}/api-extensions`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
 }
@@ -69,11 +64,6 @@ describe("createApiExtensionHandler", () => {
     const res = await fetch(`${url}/health`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
-  });
-
-  it("401s a callback with a missing or wrong bearer", async () => {
-    expect((await post(cart("Update", 25), null)).status).toBe(401);
-    expect((await post(cart("Update", 25), "Bearer wrong")).status).toBe(401);
   });
 
   it("approves with an empty 200 when nothing matches / nothing to change", async () => {

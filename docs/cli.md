@@ -309,7 +309,7 @@ Errors out if the bundle declares no `apiExtensions`.
 
 ```
 commercetools integration-layer extension serve-api-extension --public-url <url> [-p 4000]
-                                                              [--secret s] [--config KEY=VALUE]...
+                                                              [--config KEY=VALUE]...
                                                               [--entry f] [--out f] [--cleanup] [--env-file path]
 ```
 
@@ -333,10 +333,8 @@ No `ngrok`? Any tunnel works, including zero-install SSH ones — e.g.
 `ssh -R 80:localhost:4000 localhost.run` prints an `https://…lhr.life` URL to pass as
 `--public-url`, and `cloudflared tunnel --url http://localhost:4000` does the same.
 
-commercetools authenticates each callback with a shared secret this command mints per run
-(the Extension's `AuthorizationHeader`); the local server rejects anything without it, so
-only commercetools can invoke your handlers. `ctx.config` comes from `EXTENSION_CONFIG_*` /
-`.env` / `--env-file`, with `--config` overriding a key (same as `invoke-api-extension`).
+`ctx.config` comes from `EXTENSION_CONFIG_*` / `.env` / `--env-file`, with `--config`
+overriding a key (same as `invoke-api-extension`).
 
 **Safety — it never disturbs a real Extension.** It **refuses** to run if the Project
 already has *any* API Extension, owns everything it creates under the `il-localdev-` key
@@ -347,7 +345,6 @@ prefix, and **deletes** those on exit. Point it at a dedicated dev/sandbox Proje
 | --- | --- | --- |
 | `--public-url` | — | **required** (unless `--cleanup`); the tunnel's base URL. commercetools calls `<public-url>/api-extensions` |
 | `-p`, `--port` | `4000` | local port to listen on |
-| `--secret` | random per run (`IL_DEBUG_EXT_SECRET`) | the bearer commercetools must present |
 | `--config` | — | repeatable `KEY=VALUE`, becomes `ctx.config` (overrides env / `.env`) |
 | `--cleanup` | `false` | remove leftover `il-localdev-*` Extensions and exit (does not serve) |
 | `--env-file` | — | optional dotenv path (default: load `.env` from cwd if present) |

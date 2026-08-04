@@ -56,14 +56,13 @@ interface ExtensionTrigger {
   condition?: string;
 }
 
-/** The commercetools ExtensionDraft body — an HTTP destination with a shared-secret
- * Authorization header, plus the triggers derived from one bundle declaration. */
+/** The commercetools ExtensionDraft body — an HTTP destination plus the triggers
+ * derived from one bundle declaration. */
 export interface ExtensionDraft {
   key: string;
   destination: {
     type: "HTTP";
     url: string;
-    authentication: { type: "AuthorizationHeader"; headerValue: string };
   };
   triggers: ExtensionTrigger[];
 }
@@ -77,22 +76,15 @@ export interface ExtensionSummary {
 
 /**
  * Build the commercetools ExtensionDraft for one declaration: destination = the local
- * server's public `/api-extensions` URL, authentication = the shared secret this
- * command minted (commercetools sends it back as the `Authorization` header, which the
- * local server verifies). The `headerValue` is the FULL header value, so callers pass
- * e.g. `Bearer <secret>`.
+ * server's public `/api-extensions` URL. No destination authentication — this is a
+ * throwaway local debug callback behind an ephemeral tunnel, kept deliberately simple.
  */
-export function draftFor(
-  decl: ApiExtensionDefinition,
-  callbackUrl: string,
-  authorizationHeaderValue: string,
-): ExtensionDraft {
+export function draftFor(decl: ApiExtensionDefinition, callbackUrl: string): ExtensionDraft {
   return {
     key: managedKey(decl.key),
     destination: {
       type: "HTTP",
       url: callbackUrl,
-      authentication: { type: "AuthorizationHeader", headerValue: authorizationHeaderValue },
     },
     triggers: [
       {
