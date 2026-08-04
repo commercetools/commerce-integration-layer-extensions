@@ -19,8 +19,10 @@
 //
 // SAFETY MODEL (deliberately strict — these callbacks make commercetools call YOUR
 // laptop before persisting a write):
-//   - It REFUSES to run if the project already has ANY API Extension, so it can never
-//     disturb a real one. Run it against a dedicated dev/sandbox project.
+//   - It REFUSES to run if the project already has an API Extension that triggers on the
+//     SAME resource + action this bundle would register — a collision it must never
+//     disturb (and one commercetools rejects anyway). Unrelated Extensions are left
+//     untouched. Prefer a dedicated dev/sandbox project regardless.
 //   - Everything it creates is keyed under `il-localdev-` and DELETED on exit.
 //   - `--cleanup` sweeps leftovers from a previous run that crashed before cleanup.
 
@@ -44,6 +46,7 @@ import {
   ctApiBaseUrl,
   deleteExtension,
   draftFor,
+  findTriggerCollisions,
   isManagedKey,
   listExtensions,
   managedKey,
@@ -124,20 +127,6 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
     }
     const callbackUrl = `${publicUrl}/api-extensions`;
 
-    // Refuse to touch a project that already has Extensions (see the SAFETY MODEL note).
-    const existing = await listExtensions(apiBaseUrl, projectKey, authFetch);
-    if (existing.length > 0) {
-      const keys = existing.map((e) => e.key ?? "(no key)").join(", ");
-      const hint = existing.some((e) => isManagedKey(e.key))
-        ? " Some look like leftovers from a previous run — clear them with `--cleanup`."
-        : "";
-      this.error(
-        `project '${projectKey}' already has ${existing.length} API Extension(s): ${keys}. ` +
-          "Refusing to register — this command only runs against a project with none, so it can " +
-          `never disturb an existing Extension.${hint}`,
-      );
-    }
-
     // ctx.config from EXTENSION_CONFIG_* / .env, with explicit --config winning (there
     // is no Commerce Integration Layer to read the project's stored config from).
     const config = {
@@ -146,12 +135,34 @@ export default class ExtensionServeApiExtension extends IntegrationLayerCommand 
     };
     const makeCtx = (): ExtensionContext => ({ now: () => Date.now(), config });
 
-    // Initial one-shot build so we can validate the bundle declares handlers and
-    // register them BEFORE opening a port — fail fast otherwise.
+    // Initial one-shot build so we can validate the bundle declares handlers, learn the
+    // resource/action triggers it wants, and register them BEFORE opening a port.
     let current = await this.buildOnce(flags.entry, flags.out);
     if (current.length === 0) {
       this.error(
         "this bundle declares no `apiExtensions` — nothing to serve (author them with `defineApiExtension`)",
+      );
+    }
+
+    // Refuse ONLY on a real collision: an existing Extension that triggers on the same
+    // resource + action this bundle would register (commercetools allows one Extension
+    // per resource/action, and we must never disturb a real one). Unrelated Extensions
+    // are fine and left untouched. See the SAFETY MODEL note.
+    const collisions = findTriggerCollisions(
+      await listExtensions(apiBaseUrl, projectKey, authFetch),
+      current,
+    );
+    if (collisions.length > 0) {
+      const detail = collisions
+        .map((c) => `'${c.key ?? c.id}' on ${c.resourceTypeId}/${c.actions.join(",")}`)
+        .join("; ");
+      const hint = collisions.some((c) => isManagedKey(c.key))
+        ? " Some are leftovers from a previous run (`il-localdev-*`) — clear them with `--cleanup`."
+        : "";
+      this.error(
+        `project '${projectKey}' already has an API Extension that triggers on a resource/action ` +
+          `this bundle would register: ${detail}. Refusing to register so it can never disturb that ` +
+          `Extension (commercetools also rejects overlapping triggers).${hint}`,
       );
     }
 

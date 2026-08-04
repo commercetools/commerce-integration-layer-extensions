@@ -336,10 +336,12 @@ No `ngrok`? Any tunnel works, including zero-install SSH ones — e.g.
 `ctx.config` comes from `EXTENSION_CONFIG_*` / `.env` / `--env-file`, with `--config`
 overriding a key (same as `invoke-api-extension`).
 
-**Safety — it never disturbs a real Extension.** It **refuses** to run if the Project
-already has *any* API Extension, owns everything it creates under the `il-localdev-` key
-prefix, and **deletes** those on exit. Point it at a dedicated dev/sandbox Project. Needs a
-`manage_project` login (it calls the commercetools API directly).
+**Safety — it never disturbs a real Extension.** Before registering, it inspects the
+Project's existing Extensions and **refuses** only if one already triggers on the *same
+resource + action* it would register (a collision commercetools rejects anyway);
+unrelated Extensions are left untouched. It owns everything it creates under the
+`il-localdev-` key prefix and **deletes** those on exit. Prefer a dedicated dev/sandbox
+Project. Needs a `manage_project` login (it calls the commercetools API directly).
 
 This is a **separate command from `serve` on purpose** (not a `serve --api-extensions`
 flag): `serve` is a safe, login-free local server, whereas this one logs in and registers
@@ -354,8 +356,8 @@ deliberate act — running `serve` can never register anything in commercetools 
 | `--cleanup` | `false` | remove leftover `il-localdev-*` Extensions and exit (does not serve) |
 | `--env-file` | — | optional dotenv path (default: load `.env` from cwd if present) |
 
-Errors out if the bundle declares no `apiExtensions`, or if the Project already has an
-Extension.
+Errors out if the bundle declares no `apiExtensions`, or if an existing Extension
+collides with a resource/action it would register.
 
 ### `extension create-api-extension-input`
 

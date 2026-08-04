@@ -11,10 +11,11 @@
 //
 // SAFETY MODEL: this registers callbacks that make commercetools call the developer's
 // machine, so it is intentionally conservative. `serve-api-extension` REFUSES to run
-// against a project that already has ANY Extension (so it can never disturb a real
-// one), owns everything it creates under the `il-localdev-` key prefix, and deletes
-// what it created on exit. This module supplies the pure, unit-tested pieces of that
-// contract (key/draft/reconcile) plus the three REST calls.
+// when an existing Extension collides with the resource/action it would register (see
+// `findTriggerCollisions`) so it can never disturb a real one; unrelated Extensions are
+// left untouched. It owns everything it creates under the `il-localdev-` key prefix and
+// deletes what it created on exit. This module supplies the pure, unit-tested pieces of
+// that contract (key/draft/reconcile/collision) plus the three REST calls.
 
 import type { ApiExtensionDefinition } from "./tooling/apiExtension.js";
 
@@ -50,7 +51,7 @@ export function isManagedKey(key: string | undefined): boolean {
   return typeof key === "string" && key.startsWith(MANAGED_KEY_PREFIX);
 }
 
-interface ExtensionTrigger {
+export interface ExtensionTrigger {
   resourceTypeId: string;
   actions: string[];
   condition?: string;
@@ -72,6 +73,57 @@ export interface ExtensionSummary {
   id: string;
   key?: string;
   version: number;
+  /** The resource/action triggers, used to detect collisions with what we'd register. */
+  triggers?: ExtensionTrigger[];
+}
+
+/** A resource/action overlap between an existing Extension and a declaration we'd register. */
+export interface TriggerCollision {
+  /** The existing Extension's key (undefined if it has none). */
+  key?: string;
+  /** The existing Extension's id. */
+  id: string;
+  /** The resource type both trigger on. */
+  resourceTypeId: string;
+  /** The action(s) they share. */
+  actions: string[];
+}
+
+/**
+ * Find where the project's EXISTING Extensions would collide with what we're about to
+ * register — an existing trigger on the SAME `resourceTypeId` that shares at least one
+ * `action` with one of our declarations. commercetools allows only one Extension per
+ * resource+action, so `serve-api-extension` registers only when there is no overlap; an
+ * unrelated Extension (a different resource, or non-overlapping actions) is left
+ * untouched. Pure, so it's unit-tested directly.
+ */
+export function findTriggerCollisions(
+  existing: readonly ExtensionSummary[],
+  desired: readonly ApiExtensionDefinition[],
+): TriggerCollision[] {
+  const wantedActionsByResource = new Map<string, Set<string>>();
+  for (const d of desired) {
+    const set = wantedActionsByResource.get(d.resourceTypeId) ?? new Set<string>();
+    for (const a of d.actions) set.add(a);
+    wantedActionsByResource.set(d.resourceTypeId, set);
+  }
+  const collisions: TriggerCollision[] = [];
+  for (const ext of existing) {
+    for (const trigger of ext.triggers ?? []) {
+      const wanted = wantedActionsByResource.get(trigger.resourceTypeId);
+      if (!wanted) continue;
+      const shared = trigger.actions.filter((a) => wanted.has(a));
+      if (shared.length > 0) {
+        collisions.push({
+          key: ext.key,
+          id: ext.id,
+          resourceTypeId: trigger.resourceTypeId,
+          actions: shared,
+        });
+      }
+    }
+  }
+  return collisions;
 }
 
 /**

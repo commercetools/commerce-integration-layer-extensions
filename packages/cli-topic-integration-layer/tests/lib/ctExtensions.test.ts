@@ -5,12 +5,14 @@ import {
   ctApiBaseUrl,
   deleteExtension,
   draftFor,
+  findTriggerCollisions,
   isManagedKey,
   listExtensions,
   managedKey,
   planReconcile,
   triggerSignature,
   type AuthFetch,
+  type ExtensionSummary,
   type RegisteredExtension,
 } from "../../src/lib/ctExtensions.js";
 import type { ApiExtensionDefinition } from "../../src/lib/tooling/apiExtension.js";
@@ -74,6 +76,36 @@ describe("draftFor", () => {
   it("omits condition when the declaration has none", () => {
     const draft = draftFor(decl("k"), "https://u/api-extensions");
     expect(draft.triggers[0]).not.toHaveProperty("condition");
+  });
+});
+
+describe("findTriggerCollisions", () => {
+  // `decl("x")` triggers on cart / [Create, Update].
+  const ext = (
+    id: string,
+    key: string | undefined,
+    triggers: { resourceTypeId: string; actions: string[] }[],
+  ): ExtensionSummary => ({ id, key, version: 1, triggers });
+
+  it("is empty when the existing Extension is on a different resource", () => {
+    const existing = [ext("1", "orders", [{ resourceTypeId: "order", actions: ["Create"] }])];
+    expect(findTriggerCollisions(existing, [decl("a")])).toEqual([]);
+  });
+
+  it("is empty when the same resource has non-overlapping actions", () => {
+    const existing = [ext("1", "cart-delete", [{ resourceTypeId: "cart", actions: ["Delete"] }])];
+    expect(findTriggerCollisions(existing, [decl("a")])).toEqual([]);
+  });
+
+  it("flags an overlap on the same resource + action, reporting only the shared actions", () => {
+    const existing = [ext("1", "real-cart", [{ resourceTypeId: "cart", actions: ["Update", "Delete"] }])];
+    expect(findTriggerCollisions(existing, [decl("a")])).toEqual([
+      { key: "real-cart", id: "1", resourceTypeId: "cart", actions: ["Update"] },
+    ]);
+  });
+
+  it("tolerates an Extension with no triggers array", () => {
+    expect(findTriggerCollisions([{ id: "1", key: "k", version: 1 }], [decl("a")])).toEqual([]);
   });
 });
 
