@@ -62,7 +62,7 @@ Not logged in, an authenticated command fails immediately with
 
 | Needs a login | Runs offline |
 | --- | --- |
-| `explore`, `schema fetch`, `extension push`, `extension status`, `extension delete`, `config *` | `init`, `extension build`, `extension invoke-api-extension`, `extension create-api-extension-input`, `extension serve` (standalone) |
+| `explore`, `schema fetch`, `extension push`, `extension status`, `extension delete`, `extension serve-api-extension`, `config *` | `init`, `extension build`, `extension invoke-api-extension`, `extension create-api-extension-input`, `extension serve` (standalone) |
 
 Two commands are conditional: `extension validate` needs a login only for its remote
 half (`--skip remote` makes it fully offline), and `extension serve` needs one only
@@ -93,8 +93,8 @@ Available on every authenticated command (help group `COMMERCE INTEGRATION LAYER
 | `--integration-layer-url` | `INTEGRATION_LAYER_URL` | extensions edge base URL; overrides the Region-derived host |
 | `--project-key` | — | act on a different Project than the logged-in one |
 
-Every authenticated command, plus the offline `extension serve` and
-`extension invoke-api-extension`, also takes `--env-file <path>` — a dotenv file loaded
+Every authenticated command (including `extension serve-api-extension`), plus the offline
+`extension serve` and `extension invoke-api-extension`, also takes `--env-file <path>` — a dotenv file loaded
 before the command runs (default: `.env` in the cwd, if present). A variable already set
 in the shell always wins; `INTEGRATION_LAYER_URL` and local `EXTENSION_CONFIG_*` values
 can live there (see [local development](authoring.md#local-development)).
@@ -325,6 +325,70 @@ if the project isn't enrolled or its extension isn't deployed (no deployment / n
 URL yet).
 
 [apiext]: https://docs.commercetools.com/integration-layer/api-extensions
+
+### `extension serve-api-extension`
+
+```
+commercetools integration-layer extension serve-api-extension --public-url <url> [-p 4000]
+                                                              [--config KEY=VALUE]...
+                                                              [--all] [--extensions-dir extensions]
+                                                              [--entry f] [--out f] [--cleanup] [--env-file path]
+```
+
+Local **end-to-end** debugging for [API Extensions][apiext] — the online counterpart to
+the offline `invoke-api-extension`. It serves the bundle's `apiExtensions` handlers over
+HTTP and registers a commercetools API Extension pointing at them, so a **real** cart/order
+write in the Project calls the code on your machine (in plain Node — attach a debugger,
+set breakpoints). Editing `src/extension.ts` hot-reloads the handlers, and a changed
+trigger/condition re-registers automatically.
+
+commercetools must reach a public HTTPS URL, so run your own tunnel and pass its address:
+
+```bash
+ngrok http 4000                                    # in one terminal → https://abc123.ngrok.app
+commercetools integration-layer extension serve-api-extension --public-url https://abc123.ngrok.app
+# …do a matching cart write in the Project; Ctrl-C to deregister and exit.
+commercetools integration-layer extension serve-api-extension --cleanup   # sweep leftovers from a crash
+```
+
+No `ngrok`? Any tunnel works, including zero-install SSH ones — e.g.
+`ssh -R 80:localhost:4000 localhost.run` prints an `https://…lhr.life` URL to pass as
+`--public-url`, and `cloudflared tunnel --url http://localhost:4000` does the same.
+
+`ctx.config` comes from `EXTENSION_CONFIG_*` / `.env` / `--env-file`, with `--config`
+overriding a key (same as `invoke-api-extension`).
+
+**Monorepo (`--all`).** Like `serve`/`build`/`push`, `--all` builds + watches every
+package under `./extensions/*` and serves the **one combined bundle** a Project deploys —
+every package's `apiExtensions` concatenated — registering the whole set (and re-merging
+on any package's edit). Without it, it serves the single `--entry` bundle in the cwd. A
+given API-Extension `key` must be unique across packages (a Project ships one bundle).
+
+**Safety — it never disturbs a real Extension.** Before registering, it inspects the
+Project's existing Extensions and **refuses** only if one already triggers on the *same
+resource + action* it would register (a collision commercetools rejects anyway);
+unrelated Extensions are left untouched. It owns everything it creates under the
+`il-localdev-` key prefix and **deletes** those on exit. Prefer a dedicated dev/sandbox
+Project. Needs a `manage_project` login (it calls the commercetools API directly).
+
+This is a **separate command from `serve` on purpose** (not a `serve --api-extensions`
+flag): `serve` is a safe, login-free local server, whereas this one logs in and registers
+a callback in commercetools. Keeping them apart makes that registration an explicit,
+deliberate act — running `serve` can never register anything in commercetools by accident.
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--public-url` | — | **required** (unless `--cleanup`); the tunnel's base URL. commercetools calls `<public-url>/api-extensions` |
+| `-p`, `--port` | `4000` | local port to listen on |
+| `--config` | — | repeatable `KEY=VALUE`, becomes `ctx.config` (overrides env / `.env`) |
+| `--all` | `false` | serve + register the combined bundle from every `./extensions/*` package (the deployed shape) |
+| `--extensions-dir` | `extensions` | directory holding the extension packages (used with `--all`) |
+| `--cleanup` | `false` | remove leftover `il-localdev-*` Extensions and exit (does not serve) |
+| `--env-file` | — | optional dotenv path (default: load `.env` from cwd if present) |
+
+Errors out if the bundle declares no `apiExtensions`, if an existing Extension collides
+with a resource/action it would register, or (with `--all`) if two packages declare the
+same API-Extension `key`.
 
 ### `extension create-api-extension-input`
 
