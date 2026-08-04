@@ -1,5 +1,19 @@
 # @commercetools/cli-topic-integration-layer
 
+## 0.9.0
+
+### Minor Changes
+
+- a465eca: Add `extension invoke-api-extension --deployed`: fire the API-Extension callback at the project's DEPLOYED extension (the LIVE code commercetools calls on a write) through the Commerce Integration Layer, instead of running the local bundle in-process. Only the integration layer can sign the connector's `/api-extensions` callback (the shared secret is derived from the project's stored client secret and never leaves the server), so `--deployed` posts the payload to a new IL signing-proxy route and prints the connector's verdict; **nothing is persisted** to commercetools. It requires a `commercetools auth login`, uses the deployed code + the project's stored config, and returns the connector's single merged verdict — so it can't be combined with the local-bundle flags (`--all`, `--extensions-dir`, `--entry`, `--out`, `--config`, `--key`). Local (default) invocation is unchanged.
+
+  Requires the companion Commerce Integration Layer route (`POST /:projectKey/extension/api-extensions/invoke`).
+
+- c04939e: Add `extension serve-api-extension` for local end-to-end debugging of commercetools API Extensions. It serves the bundle's `apiExtensions` handlers over HTTP (in plain Node, so breakpoints work) and dynamically registers a commercetools API Extension pointing at a tunnel you supply with `--public-url`, so a real cart/order write in the Project calls the code on your machine. Editing the source hot-reloads the handlers and re-registers on a changed trigger.
+
+  The command is deliberately conservative: before registering it **refuses** if an existing Extension already triggers on the same resource + action it would register (a collision, which commercetools rejects anyway) — unrelated Extensions are left untouched. It owns everything it creates under the `il-localdev-` key prefix and deletes those on exit; `--cleanup` sweeps leftovers from a crashed run. Point it at a dedicated dev/sandbox Project.
+
+  Like `serve`/`build`/`push`, it supports `--all`: in a monorepo of `extensions/*` packages it builds, watches, and serves the one combined bundle a Project deploys (every package's `apiExtensions` concatenated) and registers the whole set, re-merging on any package's edit. Each API-Extension `key` must be unique across packages.
+
 ## 0.8.0
 
 ### Minor Changes
