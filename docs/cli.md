@@ -141,7 +141,9 @@ commercetools integration-layer init [DIRECTORY] [--template basic] [-f]
 
 Scaffolds an extensions monorepo: a pnpm workspace with the root scripts wired to the
 `--all` flow, shared TypeScript and ESLint config, and one buildable `hello-world`
-extension under `extensions/`. Everything is vendored inline — no network fetch.
+extension under `extensions/` with a colocated Vitest test (`src/extension.test.ts`)
+that calls its resolver directly. Run the suites with `pnpm test` (per-package or from
+the root). Everything is vendored inline — no network fetch.
 
 | Argument / flag | Default | Notes |
 | --- | --- | --- |
