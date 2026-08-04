@@ -4,9 +4,10 @@ import { Args, Command, Flags } from "@oclif/core";
 
 // `init` scaffolds a MONOREPO you own and grow — a pnpm workspace whose members are
 // individual extensions (`extensions/*`), seeded with one buildable hello-world
-// extension that extends `Query`. The build/validate/push flow itself lives in this
-// published CLI plugin, not in the scaffold, so an extension package stays tiny (just
-// `src/extension.ts` + a thin package.json/tsconfig). Everything is vendored inline —
+// extension that extends `Query` and a colocated Vitest test that exercises its
+// resolver. The build/validate/push flow itself lives in this published CLI plugin,
+// not in the scaffold, so an extension package stays tiny (just `src/extension.ts` +
+// its `*.test.ts` + a thin package.json/tsconfig). Everything is vendored inline —
 // no network fetch — and kept dependency-light so the extension commands work on it
 // out of the box. The `basic` template is the only one today.
 
@@ -34,6 +35,7 @@ function templateFiles(projectName: string): Record<string, string> {
     "build": "commercetools integration-layer extension build --all",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
+    "test": "pnpm -r test",
     "dev": "commercetools integration-layer extension serve --all",
     "validate": "commercetools integration-layer extension validate --all",
     "push": "commercetools integration-layer extension push --all"
@@ -130,20 +132,26 @@ pnpm install
 # From the repo root — these operate on the ONE combined bundle:
 pnpm dev        # serve the merged subgraph behind a local federated gateway with the
                 # Commerce Integration Layer, at http://localhost:4000/graphql. Needs a login.
+pnpm test       # run every extension's unit tests (Vitest) — no login, no network
 pnpm validate   # compose the combined bundle against your live schema (no upload)
 pnpm push       # validate + upload it (replacing the Project's current bundle)
 
 # …or iterate on one extension in isolation (standalone subgraph, no login needed):
 pnpm --filter @extensions/hello-world dev
+pnpm --filter @extensions/hello-world test
 \`\`\`
+
+Resolvers, hooks, and API-extension handlers are plain functions, so you unit-test them
+by calling them directly — see \`extensions/hello-world/src/extension.test.ts\` for the
+pattern (a minimal fake for the host context, no gateway required).
 
 With \`pnpm dev\` running, \`/graphql\` is the gateway, \`/_extension\` the raw combined
 subgraph, and \`/composed\` the browsable merged schema.
 
 To add an extension, copy \`extensions/hello-world\`, rename it in its \`package.json\`,
-and edit its \`src/extension.ts\` — the root scripts discover it automatically. Two
-extensions can each add fields to \`Query\`; they only clash if they declare the *same*
-field.
+and edit its \`src/extension.ts\` (and the colocated \`src/extension.test.ts\`) — the root
+scripts discover it automatically. Two extensions can each add fields to \`Query\`; they
+only clash if they declare the *same* field.
 
 Optionally copy \`.env.example\` to \`.env\` to override the Commerce Integration Layer edge URL.
 
@@ -164,11 +172,13 @@ Optionally copy \`.env.example\` to \`.env\` to override the Commerce Integratio
   "scripts": {
     "build": "commercetools integration-layer extension build",
     "dev": "commercetools integration-layer extension serve",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.8"
   }
 }
 `,
@@ -227,6 +237,43 @@ export const resolvers = {
   },
 };
 `,
+    "extensions/hello-world/src/extension.test.ts": `/**
+ * A resolver is a plain function, so you test it by calling it directly — no gateway,
+ * no network, no login. \`pnpm test\` runs this (Vitest) both here and, from the repo
+ * root, across every extension. Copy this file alongside your own \`extension.ts\` and
+ * assert what your resolvers/hooks/API-extension handlers return.
+ *
+ * The restricted runtime hands each resolver a context (\`now()\` + the project's
+ * \`config\` map). Tests stand in a minimal fake for it — see \`ctx\` below.
+ */
+
+import { describe, expect, it } from "vitest";
+import { resolvers } from "./extension.js";
+
+// A minimal stand-in for the host-provided ExtensionContext. Pass a \`config\` to
+// exercise merchant-supplied settings (e.g. \`GREETING\`).
+const ctx = (config: Record<string, string> = {}) => ({ now: () => Date.now(), config });
+
+describe("hello-world extension", () => {
+  it("greets the world by default", () => {
+    expect(resolvers.Query.hello({}, {}, ctx())).toBe(
+      "Hello, world, from your integration-layer extension!",
+    );
+  });
+
+  it("greets a named visitor", () => {
+    expect(resolvers.Query.hello({}, { name: "Ada" }, ctx())).toBe(
+      "Hello, Ada, from your integration-layer extension!",
+    );
+  });
+
+  it("honours the GREETING config override set per project", () => {
+    expect(resolvers.Query.hello({}, { name: "Ada" }, ctx({ GREETING: "Hi" }))).toBe(
+      "Hi, Ada, from your integration-layer extension!",
+    );
+  });
+});
+`,
   };
 }
 
@@ -282,6 +329,7 @@ export default class Init extends Command {
     this.log("Next steps:");
     if (dir !== ".") this.log(`  cd ${dir}`);
     this.log("  pnpm install");
+    this.log("  pnpm test  # run the hello-world extension's unit tests");
     this.log("  pnpm dev   # run the hello-world extension locally");
   }
 }

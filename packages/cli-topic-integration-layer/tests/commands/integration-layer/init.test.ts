@@ -25,6 +25,8 @@ describe("integration-layer init", () => {
     expect(rootPkg.scripts.build).toBe("commercetools integration-layer extension build --all");
     expect(rootPkg.scripts.validate).toBe("commercetools integration-layer extension validate --all");
     expect(rootPkg.scripts.push).toBe("commercetools integration-layer extension push --all");
+    // Tests fan out per-package (each extension owns its own unit tests).
+    expect(rootPkg.scripts.test).toBe("pnpm -r test");
 
     const extPkg = JSON.parse(
       await readFile(join(dir, "extensions", "hello-world", "package.json"), "utf8"),
@@ -35,6 +37,9 @@ describe("integration-layer init", () => {
     expect(extPkg.scripts.dev).toBe("commercetools integration-layer extension serve");
     expect(extPkg.scripts.validate).toBeUndefined();
     expect(extPkg.scripts.push).toBeUndefined();
+    // Each extension carries its own unit-test setup so a copy stays testable.
+    expect(extPkg.scripts.test).toBe("vitest run");
+    expect(extPkg.devDependencies.vitest).toBeDefined();
 
     const extension = await readFile(
       join(dir, "extensions", "hello-world", "src", "extension.ts"),
@@ -47,10 +52,20 @@ describe("integration-layer init", () => {
     expect(extension).toContain("ctx.config.GREETING");
     expect(extension).toContain("export const resolvers");
 
+    const test = await readFile(
+      join(dir, "extensions", "hello-world", "src", "extension.test.ts"),
+      "utf8",
+    );
+    expect(test).toContain('from "vitest"');
+    expect(test).toContain('import { resolvers } from "./extension.js"');
+    expect(test).toContain("resolvers.Query.hello");
+    expect(test).toContain("GREETING");
+
     const readme = await readFile(join(dir, "README.md"), "utf8");
     expect(readme).toContain("pnpm add -g @commercetools/cli@dev");
     expect(readme).toContain("commercetools plugins install @commercetools/cli-topic-integration-layer");
     expect(readme).toContain("commercetools auth login");
+    expect(readme).toContain("pnpm test");
   });
 
   it("scaffolds into the current directory when no directory is given", async () => {
