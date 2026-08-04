@@ -1,5 +1,11 @@
 # @commercetools/cli-topic-integration-layer
 
+## 0.8.0
+
+### Minor Changes
+
+- 9fa0fef: `init` now scaffolds a colocated Vitest test for the starter extension (`extensions/hello-world/src/extension.test.ts`) that calls the resolver directly against a minimal fake context. The generated `hello-world` package gains a `test` script (`vitest run`) plus `vitest` as a dev dependency, and the root gains a `pnpm test` script that fans the suites out across every extension (`pnpm -r test`). The README and CLI docs document the pattern so a copied extension stays testable out of the box.
+
 ## 0.7.0
 
 ### Minor Changes
