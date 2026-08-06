@@ -11,11 +11,20 @@
 //   - a well-known global the sandbox does NOT endow (`process`, `Buffer`,
 //     `setInterval`, `SharedArrayBuffer`, `WebAssembly`, DOM globals, …) — so an
 //     author who reaches for one is warned here instead of crashing at runtime;
-//   - importing a Node built-in (`fs`, `crypto`, `node:*`, …) — use `fetch` or an npm package;
+//   - importing a Node built-in (`fs`, `crypto`, `node:*`, …) — use `fetch` or an npm
+//     package. The sole exception is `http`/`https`: the runtime resolves those to a
+//     gated shim (the same allowlist-gated `fetch`, no raw socket), so they are allowed;
 //   - `eval` / `new Function`.
 
 import { readFile } from "node:fs/promises";
 import ts from "typescript";
+
+/**
+ * Node built-in module ids the runtime DOES provide — as a gated `fetch` shim, not
+ * the real module (nodeHttpShim.ts). Allowed through the import check below; the
+ * `node:`-prefixed aliases are listed so either spelling passes.
+ */
+const HOST_PROVIDED_MODULES = new Set(["http", "https", "node:http", "node:https"]);
 
 /** Node core modules an extension may not import; `node:`-prefixed ids are also rejected. */
 const NODE_BUILTINS = new Set([
@@ -86,8 +95,10 @@ export interface AnalysisIssue {
   message: string;
 }
 
-/** Is `spec` a Node built-in module (or a `node:`-prefixed import)? */
+/** Is `spec` a Node built-in module (or a `node:`-prefixed import) the runtime does
+ *  NOT provide? `http`/`https` are excluded — the runtime maps them to a gated shim. */
 function isBuiltinSpecifier(spec: string): boolean {
+  if (HOST_PROVIDED_MODULES.has(spec)) return false;
   if (spec.startsWith("node:")) return true;
   return NODE_BUILTINS.has(spec);
 }

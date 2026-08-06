@@ -191,11 +191,17 @@ allowed is refused before the socket opens, so adding the host is step one of an
 external-service extension. An operator denylist sits above yours and wins; `allowlist
 list` shows it.
 
+The Node `http`/`https` modules are the one exception to "no `node:*`": you may
+`import https from "https"` (or `node:https`), but you get a **shim, not the real
+module** — its `request`/`get` route through the very same allowlist-gated `fetch`,
+with no raw socket. So a plain-`https` SDK works, and it obeys the same per-Project
+allowlist (an unallowed host raises an `'error'` event exactly as `fetch` would throw).
+
 **Off limits**
 
 | Group | Withheld | Why |
 | --- | --- | --- |
-| Node | `process` / `process.env`, `Buffer`, `fs`, `child_process`, raw sockets, any `node:*` import | no ambient authority; configuration comes from `ctx.config`, not the environment |
+| Node | `process` / `process.env`, `Buffer`, `fs`, `child_process`, raw sockets, any `node:*` import (except `http`/`https`, which resolve to the gated-`fetch` shim) | no ambient authority; configuration comes from `ctx.config`, not the environment |
 | Dynamic code | `eval`, `new Function` | code that isn't in the bundle can't be reviewed by the publish gate |
 | Unbounded scheduling | `setInterval` | a resolver has a request lifetime, not a background one |
 | Shared memory | `SharedArrayBuffer`, `Atomics` | side channels |
@@ -203,10 +209,11 @@ list` shows it.
 | Other | `WebAssembly`, `WeakRef`, `FinalizationRegistry`, `performance`, `CompressionStream`, `DecompressionStream` | DoS amplifiers, side channels, or non-determinism with no use case yet |
 
 **Imports.** esbuild inlines your local modules and any npm SDK you import into one
-self-contained CommonJS module. The single exception is **`graphql`, which stays
-external** — the host provides it, and a second copy in the bundle would break its
-`instanceof` checks (a `GraphQLError` you threw would not be recognised as one). Your
-SDK must be fetch-based: there is no Node `http`/`https` to fall back to.
+self-contained CommonJS module. Two things stay **external** for the host to supply:
+**`graphql`** — a second copy in the bundle would break its `instanceof` checks (a
+`GraphQLError` you threw would not be recognised as one) — and **`http`/`https`**,
+which the runtime maps to the gated-`fetch` shim. A fetch-based SDK is still the
+smoothest path, but a plain-`https` one now works too (through that shim).
 
 **The static check is a lint, not the boundary.** `validate` and `push` reject a reach
 for a non-endowed global before you deploy, which is there to save you a round trip.
