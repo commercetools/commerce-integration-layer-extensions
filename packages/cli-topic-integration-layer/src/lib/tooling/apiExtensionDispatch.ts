@@ -75,9 +75,7 @@ export async function dispatchApiExtension(
   input: ApiExtensionInput,
 ): Promise<DispatchResult> {
   const matching = handlers.filter((h) =>
-    // input.action is the SDK's (open) ExtensionAction; our handlers only declare
-    // Create/Update, so a non-matching action simply finds no handler.
-    handlerMatches(h, input.resource.typeId, input.action as ApiExtensionAction),
+    handlerMatches(h, input.resource.typeId, input.action),
   );
   if (matching.length === 0) return { status: 200 };
 

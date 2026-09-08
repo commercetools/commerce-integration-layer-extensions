@@ -25,8 +25,10 @@ import type { ExtensionAction, ExtensionInput } from '@commercetools/platform-sd
 // Re-exported so a handler can annotate the payload without importing the SDK.
 export type { ExtensionInput };
 
-// The trigger actions we support — a subset of the SDK's (open) ExtensionAction.
-export type ApiExtensionAction = Extract<ExtensionAction, 'Create' | 'Update'>;
+// Whatever the platform triggers on. Not narrowed to the two actions that exist today:
+// the list is commercetools' to grow, and a copy of it here would refuse a declaration
+// the platform would have accepted.
+export type ApiExtensionAction = ExtensionAction;
 
 // The per-call capability context — the same the sandbox grants a resolver: the
 // merchant config map and a clock. The allowlist-gated global `fetch` is available

@@ -45,8 +45,6 @@ type ExtensionModule = {
   hooks?: unknown;
 };
 
-const API_EXTENSION_ACTIONS = new Set(['Create', 'Update']);
-
 /**
  * Does the bundle carry a capability the runtime dispatches directly, rather than
  * through the schema or an API Extension? Such a capability adds nothing to the SDL, so
@@ -85,13 +83,14 @@ function validateApiExtensions(raw: unknown): string[] {
     if (typeof e.resourceTypeId !== 'string' || e.resourceTypeId.trim() === '') {
       throw new BundleValidationError(`apiExtensions['${key}'].resourceTypeId must be a non-empty string`);
     }
+    // Shape, not vocabulary: WHICH actions exist is the platform's list and it answers
+    // for its own by name. Empty is worth refusing here, because commercetools accepts
+    // a trigger with no actions and then never fires it — a handler nobody would ever
+    // tell you was dead.
     const actions = Array.isArray(e.actions) ? e.actions : [];
-    if (
-      actions.length === 0 ||
-      !actions.every((a) => typeof a === 'string' && API_EXTENSION_ACTIONS.has(a))
-    ) {
+    if (actions.length === 0 || !actions.every((a) => typeof a === 'string' && a.trim() !== '')) {
       throw new BundleValidationError(
-        `apiExtensions['${key}'].actions must be a non-empty subset of ["Create","Update"]`,
+        `apiExtensions['${key}'].actions must be a non-empty array of action names`,
       );
     }
     if (typeof e.handler !== 'function') {

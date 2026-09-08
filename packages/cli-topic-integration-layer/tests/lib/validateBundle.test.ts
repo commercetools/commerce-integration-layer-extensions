@@ -71,6 +71,32 @@ describe("validateBundle contribution check", () => {
     expect(result.apiExtensionKeys).toEqual([]);
   });
 
+  // Local validation states what the CLI and the layer require, never what the platform
+  // requires: which actions and resource types exist is commercetools', and it can add
+  // one between two releases of this plugin. A copy of that list here would refuse a
+  // declaration the Project would have accepted, on the author's own machine, with no
+  // way around it.
+  it("passes an action and a resource type it has never heard of", async () => {
+    const result = await validate(
+      "unfamiliar-trigger",
+      `module.exports.apiExtensions = [
+         { key: "approve", resourceTypeId: "approval-rule", actions: ["Delete"], handler: () => ({}) },
+       ];`,
+    );
+    expect(result.apiExtensionKeys).toEqual(["approve"]);
+  });
+
+  it("still rejects an empty actions list — a trigger that can never fire", async () => {
+    await expect(
+      validate(
+        "no-actions",
+        `module.exports.apiExtensions = [
+           { key: "cart-check", resourceTypeId: "cart", actions: [], handler: () => ({}) },
+         ];`,
+      ),
+    ).rejects.toThrow(BundleValidationError);
+  });
+
   it("still rejects an empty dispatch map", async () => {
     await expect(validate("dispatch-empty", "module.exports.hooks = {};")).rejects.toThrow(
       BundleValidationError,
