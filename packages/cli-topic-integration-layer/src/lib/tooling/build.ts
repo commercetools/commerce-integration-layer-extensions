@@ -5,16 +5,33 @@
 // CommonJS so the runtime can evaluate it as a script and read `module.exports`.
 // `platform: "neutral"` keeps Node built-ins out (an import of one fails the build,
 // not at load time), and `conditions: ["worker"]` steers a bundled SDK to its
-// fetch-based build (the runtime provides a global `fetch`, not Node `http`/`https`).
-// `graphql` stays EXTERNAL — the runtime supplies its single instance; a second
-// inlined copy would break its `instanceof` checks.
+// fetch-based build. `graphql` stays EXTERNAL — the runtime supplies its single
+// instance; a second inlined copy would break its `instanceof` checks.
+//
+// `http`/`https` (and their `node:`-prefixed aliases) are the ONE class of Node
+// built-in left external: the runtime resolves them to a gated shim (nodeHttpShim.ts)
+// whose `request`/`get` route through the same allowlist-gated `fetch`, not a raw
+// socket. Marking them external makes esbuild emit `require("https")` for the runtime
+// to satisfy, rather than failing the build with "Could not resolve". Every OTHER
+// Node built-in stays unresolvable (and `staticAnalysis.ts` rejects it at validate).
 
 import { build } from "esbuild";
 import { join, resolve } from "node:path";
 import process from "node:process";
 
-/** Peer modules the runtime owns — bundled never, resolved at load time. */
-export const HOST_PROVIDED_EXTERNALS = ["graphql"];
+/**
+ * Peer modules the runtime owns — bundled never, resolved at load time. `graphql`
+ * (its single instance) plus the `http`/`https` modules the runtime maps to the
+ * gated fetch shim; the `node:`-prefixed aliases are included so either import
+ * spelling resolves.
+ */
+export const HOST_PROVIDED_EXTERNALS = [
+  "graphql",
+  "http",
+  "https",
+  "node:http",
+  "node:https",
+];
 
 /** The extension source of the example the tool is invoked inside (cwd-relative). */
 export function defaultEntry(): string {
