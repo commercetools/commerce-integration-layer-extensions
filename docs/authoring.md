@@ -336,20 +336,26 @@ it registers on exit; see the [CLI reference](cli.md#extension-serve-api-extensi
 ### The configuration endpoint
 
 For automation that isn't the CLI, the config API takes any `manage_project` bearer at
-`…/api/<project>/extensions/config` with a body of `[{ key, value, secret? }]`:
+`…/<project>/extension/config`. GET and PATCH speak an object envelope
+`{ entries, maskExtensionGraphQLErrors }` — `entries` is the free-form
+`[{ key, value, secret? }]` list; `maskExtensionGraphQLErrors` is a typed flag
+beside it (the operator console owns that flag; the CLI does not set it). PUT
+still takes a bare array (full replace of the entries).
 
 | Method | Effect |
 | --- | --- |
-| `GET` | list entries; secret **values** are withheld (you get `{ key, secret: true }`) |
-| `PUT` | replace the entire config with the posted array |
-| `PATCH` | upsert the posted entries; `value: null` deletes that key, the rest untouched |
+| `GET` | `{ entries, maskExtensionGraphQLErrors }`; secret **values** are withheld (you get `{ key, secret: true }`) |
+| `PUT` | replace the entire entry list with the posted array |
+| `PATCH` | `{ entries?, maskExtensionGraphQLErrors? }`; `value: null` deletes that key, the rest untouched |
 
 ```bash
 # Upsert without touching the rest; rotate a secret and drop a stale key
-curl -X PATCH "$INTEGRATION_LAYER_URL/api/$CTP_PROJECT_KEY/extensions/config" \
+curl -X PATCH "$INTEGRATION_LAYER_URL/$CTP_PROJECT_KEY/extension/config" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '[{ "key": "ALGOLIA_API_KEY", "value": "rotated-key", "secret": true },
-       { "key": "OLD_SETTING", "value": null }]'
+  -d '{ "entries": [
+        { "key": "ALGOLIA_API_KEY", "value": "rotated-key", "secret": true },
+        { "key": "OLD_SETTING", "value": null }
+      ] }'
 ```
 
 Mind the difference: `PUT` is destructive to unlisted keys, `PATCH` is not.
