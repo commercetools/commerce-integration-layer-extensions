@@ -19,6 +19,14 @@
 // bar ran under the project's service-account credentials, and that is precisely what
 // is not reimplemented here. To see what a customer sees, log in as them.
 //
+// B2B — a minted session has no business unit selected, so B2B operations fail
+// until one is chosen. `--business-unit <key> --store <key>` performs the second
+// storefront step (PUT /session/business-unit) that scopes the session and reissues
+// the bearer; both keys are required and the store must belong to the unit. This
+// needs a signed-in customer, so pair it with `--as` (or a `--session-token` that is
+// already a customer session). `--session-token` also lets you skip the login
+// entirely and hand the explorer an already-minted bearer.
+//
 // PRESENTMENT — prices are selected from the session's locale/currency/country, which
 // the Commerce Integration Layer resolves ONCE at mint (it has no per-request override, by
 // design). So `--locale/--currency/--country` are mint-time flags: to explore a
@@ -37,7 +45,7 @@ import {
   composeLocalExplorerSchema,
   type ExplorerSchema,
 } from "../../lib/tooling/exploreSchema.js";
-import { mintSession, type SessionGrant } from "../../lib/tooling/session.js";
+import { mintSession, selectBusinessUnit, type SessionGrant } from "../../lib/tooling/session.js";
 import { createExplorerServer } from "../../lib/tooling/explorerServer.js";
 
 export default class Explore extends IntegrationLayerCommand {
@@ -48,6 +56,8 @@ export default class Explore extends IntegrationLayerCommand {
     "<%= config.bin %> integration-layer explore",
     "<%= config.bin %> integration-layer explore --deployed",
     "<%= config.bin %> integration-layer explore --as alice@example.com",
+    "<%= config.bin %> integration-layer explore --as alice@example.com --business-unit acme-eu --store acme-eu-de",
+    "<%= config.bin %> integration-layer explore --session-token eyJ… --business-unit acme-eu --store acme-eu-de",
     "<%= config.bin %> integration-layer explore --currency EUR --country DE --locale de-DE",
     "<%= config.bin %> integration-layer explore --deployed --port 5000",
   ];
@@ -66,6 +76,25 @@ export default class Explore extends IntegrationLayerCommand {
     as: Flags.string({
       description:
         "run operations as this customer (an ordinary email/password login; prompts for the password unless IL_CUSTOMER_PASSWORD is set). Omit to run anonymously.",
+    }),
+    // B2B scoping. The integration layer mints a session with NO business unit
+    // selected, so B2B operations fail until one is chosen. This is a second call
+    // (PUT /session/business-unit) that reissues the bearer; both keys are required
+    // and the store must belong to the business unit.
+    "business-unit": Flags.string({
+      description:
+        "select this business unit for the session (B2B). Requires --store and a signed-in customer (--as or --session-token).",
+      helpGroup: "B2B",
+    }),
+    store: Flags.string({
+      description:
+        "select this store for the session (B2B). Must be a store associated with --business-unit.",
+      helpGroup: "B2B",
+    }),
+    "session-token": Flags.string({
+      description:
+        "use this already-minted session bearer instead of logging in (also settable via IL_SESSION_TOKEN). Skips minting, so --as and the presentment flags do not apply.",
+      env: "IL_SESSION_TOKEN",
     }),
     // Presentment. Applied at mint, because that is the only place the integration
     // layer lets it be chosen; omitted flags fall back to the project's config.
@@ -118,19 +147,78 @@ export default class Explore extends IntegrationLayerCommand {
       );
     }
 
+    // Validate the B2B / session flag combinations up front, before any network
+    // call, so a misuse fails instantly rather than after a mint.
+    const businessUnitKey = flags["business-unit"];
+    const storeKey = flags.store;
+    if ((businessUnitKey === undefined) !== (storeKey === undefined)) {
+      throw new Error("--business-unit and --store must be given together");
+    }
+    const sessionToken = flags["session-token"];
+    if (sessionToken !== undefined) {
+      // These are all mint-time inputs; with a supplied token there is no mint, so
+      // honouring them silently would be a lie. Fail loudly instead.
+      if (flags.as !== undefined) {
+        throw new Error(
+          "--session-token cannot be combined with --as: the token already carries its identity",
+        );
+      }
+      if (flags.locale !== undefined || flags.currency !== undefined || flags.country !== undefined) {
+        throw new Error(
+          "--session-token cannot be combined with --locale/--currency/--country: " +
+            "presentment is fixed when the session is minted",
+        );
+      }
+    }
+    // A business unit can only be selected on a signed-in customer session — mint is
+    // anonymous unless --as is given. A supplied --session-token may already be a
+    // customer session, so it satisfies this too (the server rejects it otherwise).
+    if (businessUnitKey !== undefined && flags.as === undefined && sessionToken === undefined) {
+      throw new Error(
+        "--business-unit/--store need a signed-in customer: pass --as, or an already " +
+          "signed-in --session-token",
+      );
+    }
+
     const resolved = await this.resolveSchema(flags.deployed, baseUrl, projectKey, authFetch);
-    const grant = await this.resolveGrant(flags.as);
-    const session = await mintSession(authUrl, projectKey, grant, {
-      locale: flags.locale,
-      currency: flags.currency,
-      country: flags.country,
-    });
+
+    // Either use the supplied bearer as-is, or mint one from the login.
+    let bearer: string;
+    let runningAs: string;
+    let pricesIn: string;
+    if (sessionToken !== undefined) {
+      bearer = sessionToken;
+      runningAs = "a supplied session token";
+      pricesIn = "as minted (from the supplied token)";
+    } else {
+      const grant = await this.resolveGrant(flags.as);
+      const session = await mintSession(authUrl, projectKey, grant, {
+        locale: flags.locale,
+        currency: flags.currency,
+        country: flags.country,
+      });
+      bearer = session.token;
+      runningAs = session.describe;
+      pricesIn = session.presentment;
+    }
+
+    // Second step for B2B: scope the session to a business unit + store. This
+    // reissues the bearer (it now carries the store's distribution channel), so the
+    // proxy must run on the returned token, not the mint one.
+    if (businessUnitKey !== undefined && storeKey !== undefined) {
+      const scoped = await selectBusinessUnit(authUrl, projectKey, bearer, {
+        businessUnitKey,
+        storeKey,
+      });
+      bearer = scoped.token;
+      runningAs = `${runningAs} · ${scoped.describe}`;
+    }
 
     const endpoint = `${graphqlUrl.replace(/\/+$/, "")}/${encodeURIComponent(projectKey)}/graphql`;
     const server = createExplorerServer({
       schema: resolved.schema,
       endpoint,
-      bearer: session.token,
+      bearer,
       clientVersion: this.config.version,
     });
 
@@ -147,8 +235,8 @@ export default class Explore extends IntegrationLayerCommand {
         "",
         `   schema     ${resolved.describe}`,
         `   operations ${endpoint}`,
-        `   running as ${session.describe}`,
-        `   prices in  ${session.presentment}`,
+        `   running as ${runningAs}`,
+        `   prices in  ${pricesIn}`,
         "",
         "   Ctrl-C to stop.",
         "",
