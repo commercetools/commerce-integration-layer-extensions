@@ -214,6 +214,91 @@ export async function fetchExtensionMeta(
   return JSON.parse(text) as ExtensionMeta;
 }
 
+/** The stored bundle's bytes plus the provenance the download route carries in headers. */
+export interface DownloadedBundle {
+  /** The raw bundle bytes, read as an ArrayBuffer so a binary/compressed blob round-trips exactly. */
+  bundle: Buffer;
+  /** The original upload filename (from `Content-Disposition`), if the route sent one. */
+  filename?: string;
+  /** The served revision's version number (from `X-Extension-Version`), if present. */
+  version?: number;
+  /** The revision's source revision (from `X-Extension-Source-Revision`), if the push recorded one. */
+  sourceRevision?: string;
+}
+
+/**
+ * Pull the filename out of a `Content-Disposition` header. Prefers the RFC 6266
+ * UTF-8 form (`filename*=UTF-8''<pct-encoded>`, which preserves a unicode name),
+ * falling back to the plain ASCII `filename="..."`. Returns undefined when neither
+ * is present (or the header is absent).
+ */
+function filenameFromContentDisposition(header: string | null): string | undefined {
+  if (!header) return undefined;
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      // Malformed percent-encoding — fall through to the ASCII form.
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain ? plain[1].trim() : undefined;
+}
+
+/**
+ * Download the project's stored extension bundle — the newest NON-FAILED ("served")
+ * revision's bytes (`GET …/extension/bundle`), or null when nothing is stored.
+ *
+ * The route serves the served revision, which is not always the newest upload: when
+ * the last push failed to load, the one beneath it is what's handed out here. Its
+ * provenance travels in response headers (filename, version, source revision), so a
+ * caller can name the file and report what it got.
+ *
+ * A 404 has two meanings. Nothing stored → null. But when every retained revision
+ * failed to load the route also 404s, with a body naming the newest (failed) version
+ * and why — that is NOT "nothing stored", so surface it as an error rather than
+ * masking it as an empty project.
+ */
+export async function fetchBundleSource(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+): Promise<DownloadedBundle | null> {
+  const url = `${apiRoot(baseUrl, projectKey)}/extension/bundle`;
+  const res = await authFetch(url);
+  if (res.status === 404) {
+    const text = await res.text();
+    let body: { error?: string; newestVersion?: number; reason?: string } | undefined;
+    try {
+      body = JSON.parse(text) as typeof body;
+    } catch {
+      // Non-JSON 404 — treat as "nothing stored" below.
+    }
+    // `newestVersion` present ⇒ a bundle IS stored, it just can't be loaded. Don't
+    // pass that off as an empty project.
+    if (body?.newestVersion !== undefined) {
+      throw new Error(
+        `no loadable extension bundle for '${projectKey}': ${body.error ?? "every retained revision failed to load"}` +
+          (body.reason ? ` (${body.reason})` : ""),
+      );
+    }
+    return null;
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GET extension/bundle failed (${res.status}): ${text}`);
+  }
+  const bundle = Buffer.from(await res.arrayBuffer());
+  const versionHeader = res.headers.get("x-extension-version");
+  return {
+    bundle,
+    filename: filenameFromContentDisposition(res.headers.get("content-disposition")),
+    version: versionHeader ? Number(versionHeader) : undefined,
+    sourceRevision: res.headers.get("x-extension-source-revision") ?? undefined,
+  };
+}
+
 /** Remove the project's extension subgraph from Hive (`DELETE …/extension/subgraph`). */
 export async function deleteExtensionSubgraph(
   baseUrl: string,
