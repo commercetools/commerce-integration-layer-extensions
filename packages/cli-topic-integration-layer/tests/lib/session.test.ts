@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mintSession } from "../../src/lib/tooling/session.js";
+import { mintSession, selectBusinessUnit } from "../../src/lib/tooling/session.js";
 
 const AUTH = "https://auth.integration-layer.eu-central-1.aws.commercetools.com";
 
@@ -184,5 +184,66 @@ describe("mintSession presentment", () => {
       password: "x",
       country: "DE",
     });
+  });
+});
+
+// A minted session carries NO business unit — the mint endpoint rejects one — so a
+// B2B session is scoped in a second call. It must PUT to /session/business-unit
+// (not the mint path or /session/scope), carry the mint bearer, and swap in the
+// reissued token.
+describe("selectBusinessUnit", () => {
+  it("PUTs to /<project>/session/business-unit with both keys and the mint bearer", async () => {
+    const calls = stubFetch(200, { token: "scoped-token" });
+
+    const scoped = await selectBusinessUnit(AUTH, "acme-b2b", "mint-bearer", {
+      businessUnitKey: "acme-eu",
+      storeKey: "acme-eu-de",
+    });
+
+    expect(scoped.token).toBe("scoped-token");
+    expect(scoped.describe).toBe("BU acme-eu / store acme-eu-de");
+    expect(calls[0].url).toBe(`${AUTH}/acme-b2b/session/business-unit`);
+    expect(calls[0].init.method).toBe("PUT");
+    expect(sentBody(calls)).toEqual({ businessUnitKey: "acme-eu", storeKey: "acme-eu-de" });
+    const headers = calls[0].init.headers as Record<string, string>;
+    const lower = Object.fromEntries(
+      Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]),
+    );
+    expect(lower.authorization).toBe("Bearer mint-bearer");
+    expect(lower["content-type"]).toBe("application/json");
+  });
+
+  it("trims a trailing slash off the auth base and url-encodes the project", async () => {
+    const calls = stubFetch(200, { token: "t" });
+    await selectBusinessUnit(`${AUTH}/`, "a/b", "bearer", {
+      businessUnitKey: "u",
+      storeKey: "s",
+    });
+    expect(calls[0].url).toBe(`${AUTH}/a%2Fb/session/business-unit`);
+  });
+
+  it("surfaces a StoreNotInBusinessUnitError description, not a bare status", async () => {
+    stubFetch(400, {
+      error: "invalid_request",
+      error_description: "store 'acme-us' is not in business unit 'acme-eu'",
+    });
+
+    await expect(
+      selectBusinessUnit(AUTH, "p", "bearer", { businessUnitKey: "acme-eu", storeKey: "acme-us" }),
+    ).rejects.toThrow(/not in business unit 'acme-eu'/);
+  });
+
+  it("names the BU/store it failed on, so a bad store reads differently to a bad edge", async () => {
+    stubFetch(503, "upstream down");
+    await expect(
+      selectBusinessUnit(AUTH, "p", "bearer", { businessUnitKey: "acme-eu", storeKey: "acme-eu-de" }),
+    ).rejects.toThrow(/business unit 'acme-eu' \/ store 'acme-eu-de'/);
+  });
+
+  it("fails loudly when the reissued response carries no token", async () => {
+    stubFetch(200, { notAToken: true });
+    await expect(
+      selectBusinessUnit(AUTH, "p", "bearer", { businessUnitKey: "u", storeKey: "s" }),
+    ).rejects.toThrow(/no `token`/);
   });
 });

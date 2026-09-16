@@ -46,6 +46,23 @@ export interface MintedSession {
 }
 
 /**
+ * The business unit / store a B2B session is scoped to. BOTH are required by the
+ * integration layer: a store proves membership of the business unit, so it cannot
+ * be inferred. Selection is a SECOND call — the mint endpoint takes no BU.
+ */
+export interface BusinessUnitScope {
+  businessUnitKey: string;
+  storeKey: string;
+}
+
+/** A reissued session after a business-unit selection. */
+export interface ScopedSession {
+  token: string;
+  /** e.g. `BU acme-eu / store acme-eu-de` — appended to the banner's `running as`. */
+  describe: string;
+}
+
+/**
  * Mint an integration-layer session bearer at `POST <authUrl>/<project>/session`.
  *
  * `authUrl` is the identity edge, NOT the extensions edge that
@@ -112,6 +129,66 @@ export async function mintSession(
     token,
     describe: grant.kind === "anonymous" ? "anonymous" : `customer ${grant.email}`,
     presentment: describePresentment(chosen),
+  };
+}
+
+/**
+ * Select a business unit and store on an already-minted session, at
+ * `PUT <authUrl>/<project>/session/business-unit`.
+ *
+ * This is the SECOND step of the B2B flow: mint cannot take a business unit (the
+ * server rejects it), so a customer session is minted first and then scoped here.
+ * `bearer` is the token from that mint; the server proves the customer's membership
+ * of the business unit by an as-associate read, and rejects a store that is not in
+ * the unit with `StoreNotInBusinessUnitError`. The reissued token REPLACES the mint
+ * token — it carries the store's distribution channel — so callers must swap it in.
+ *
+ * `authUrl` is the same identity edge `mintSession` uses, NOT the extensions edge.
+ */
+export async function selectBusinessUnit(
+  authUrl: string,
+  projectKey: string,
+  bearer: string,
+  scope: BusinessUnitScope,
+): Promise<ScopedSession> {
+  const base = authUrl.replace(/\/+$/, "");
+  const url = `${base}/${encodeURIComponent(projectKey)}/session/business-unit`;
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${bearer}`,
+    },
+    body: JSON.stringify({
+      businessUnitKey: scope.businessUnitKey,
+      storeKey: scope.storeKey,
+    }),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    // Same OAuth-shaped error surfacing as mintSession: a bad store key (a 4xx with
+    // a `StoreNotInBusinessUnitError` description) and an unreachable edge must not
+    // read the same.
+    let detail = text;
+    try {
+      const parsed = JSON.parse(text) as { error_description?: string; error?: string };
+      detail = parsed.error_description ?? parsed.error ?? text;
+    } catch {
+      // not JSON — use the raw body
+    }
+    throw new Error(
+      `could not select business unit '${scope.businessUnitKey}' / store '${scope.storeKey}' ` +
+        `(${res.status}) at ${url}: ${detail}`,
+    );
+  }
+
+  const token = (JSON.parse(text) as { token?: string }).token;
+  if (!token) throw new Error(`business-unit response from ${url} had no \`token\``);
+
+  return {
+    token,
+    describe: `BU ${scope.businessUnitKey} / store ${scope.storeKey}`,
   };
 }
 
