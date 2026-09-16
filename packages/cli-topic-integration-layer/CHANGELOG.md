@@ -1,5 +1,19 @@
 # @commercetools/cli-topic-integration-layer
 
+## 0.11.0
+
+### Minor Changes
+
+- 9774bbe: `integration-layer explore`: add `--business-unit` / `--store` to scope a B2B session, and `--session-token` to supply an already-minted bearer.
+
+  A minted session has no business unit selected, so B2B operations failed. Passing `--business-unit <key> --store <key>` now performs the second storefront step (`PUT /session/business-unit`), which reissues the bearer the explorer proxies with. Both keys are required and the store must belong to the business unit. Selection needs a signed-in customer, so pair it with `--as` (or a `--session-token` that is already a customer session). `--session-token` (also `IL_SESSION_TOKEN`) lets you skip the login and hand the explorer an existing bearer directly.
+
+- 265d78e: `integration-layer extension`: add `pull` to download the stored bundle, and let `push` upload a pre-built `.cjs` directly.
+
+  `extension pull` downloads the project's served bundle (`GET /extension/bundle`) to a file — defaulting to the stored filename under `./dist`, overridable with `--out` — and reports the version and source revision it fetched. It refuses to overwrite an existing file unless `--force` is given. Previously only the bundle's metadata was reachable (via `extension status`), never the code.
+
+  `extension push` now takes an optional path argument, auto-detected by extension: `push ./dist/extension.cjs` uploads that pre-built bundle as-is (skipping the esbuild step), while `push ./src/extension.ts` (or any non-`.cjs` path) builds from source as before. A pre-built bundle is still validated — its shape/SDL coherence locally and composition/breaking-changes remotely — before it is stored; `--force` still overrides the remote check. Passing a path together with `--all` is rejected.
+
 ## 0.10.1
 
 ### Patch Changes
