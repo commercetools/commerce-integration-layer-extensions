@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -76,6 +76,41 @@ describe("integration-layer extension pull", () => {
     expect(logs).toContain("built from:  r99");
     const [url] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe(`${BASE}/${PROJECT}/extension/bundle`);
+  });
+
+  it("refuses to overwrite an existing file without --force, and leaves it untouched", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "il-cli-pull-"));
+    const out = join(dir, "extension.cjs");
+    await writeFile(out, "OLD", "utf8");
+    const authFetch = stubFetch(
+      new Response("NEW", {
+        status: 200,
+        headers: { "Content-Disposition": 'attachment; filename="extension.cjs"' },
+      }),
+    );
+
+    const { error } = await runPull(["--out", out], authFetch);
+
+    expect(error?.message).toMatch(/already exists.*--force/);
+    // The existing file is untouched.
+    expect(await readFile(out, "utf8")).toBe("OLD");
+  });
+
+  it("overwrites an existing file when --force is given", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "il-cli-pull-"));
+    const out = join(dir, "extension.cjs");
+    await writeFile(out, "OLD", "utf8");
+    const authFetch = stubFetch(
+      new Response("NEW", {
+        status: 200,
+        headers: { "Content-Disposition": 'attachment; filename="extension.cjs"' },
+      }),
+    );
+
+    const { error } = await runPull(["--out", out, "--force"], authFetch);
+
+    expect(error).toBeUndefined();
+    expect(await readFile(out, "utf8")).toBe("NEW");
   });
 
   it("says so and writes nothing when the project has no stored bundle", async () => {
