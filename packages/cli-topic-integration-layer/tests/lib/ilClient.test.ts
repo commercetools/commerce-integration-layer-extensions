@@ -6,6 +6,7 @@ import {
   listConfig,
   patchConfig,
   invokeDeployedApiExtension,
+  fetchBundleSource,
   type AuthFetch,
 } from "../../src/lib/ilClient.js";
 
@@ -197,6 +198,64 @@ describe("patchConfig", () => {
     );
     await expect(patchConfig(BASE, PROJECT, authFetch, ENTRIES)).rejects.toThrow(
       /400.*JSON object/,
+    );
+  });
+});
+
+describe("fetchBundleSource", () => {
+  it("GETs the bundle route and returns the bytes plus header provenance", async () => {
+    const authFetch = stubFetch(
+      new Response("module.exports = { typeDefs: '' }", {
+        status: 200,
+        headers: {
+          "Content-Disposition":
+            "attachment; filename=\"extension.cjs\"; filename*=UTF-8''extension.cjs",
+          "X-Extension-Version": "7",
+          "X-Extension-Source-Revision": "r48211",
+        },
+      }),
+    );
+
+    const result = await fetchBundleSource(BASE, PROJECT, authFetch);
+
+    expect(result?.bundle.toString("utf8")).toBe("module.exports = { typeDefs: '' }");
+    expect(result?.filename).toBe("extension.cjs");
+    expect(result?.version).toBe(7);
+    expect(result?.sourceRevision).toBe("r48211");
+    const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe(`${BASE}/${PROJECT}/extension/bundle`);
+    expect(init?.method ?? "GET").toBe("GET");
+  });
+
+  it("returns null when nothing is stored (404 with no newestVersion)", async () => {
+    const authFetch = stubFetch(
+      new Response(JSON.stringify({ error: "No extension code stored for this project" }), {
+        status: 404,
+      }),
+    );
+    await expect(fetchBundleSource(BASE, PROJECT, authFetch)).resolves.toBeNull();
+  });
+
+  it("throws when every retained revision failed to load (404 with newestVersion)", async () => {
+    const authFetch = stubFetch(
+      new Response(
+        JSON.stringify({
+          error: "Every retained extension revision for this project failed to load; push a fixed bundle",
+          newestVersion: 9,
+          reason: "sandbox ban: fs access",
+        }),
+        { status: 404 },
+      ),
+    );
+    await expect(fetchBundleSource(BASE, PROJECT, authFetch)).rejects.toThrow(
+      /no loadable extension bundle.*failed to load.*sandbox ban/,
+    );
+  });
+
+  it("throws with the status + body on any other non-2xx response", async () => {
+    const authFetch = stubFetch(new Response("project not enrolled", { status: 400 }));
+    await expect(fetchBundleSource(BASE, PROJECT, authFetch)).rejects.toThrow(
+      /400.*project not enrolled/,
     );
   });
 });

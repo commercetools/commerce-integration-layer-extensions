@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
-import { Flags } from "@oclif/core";
+import { basename, extname } from "node:path";
+import { Args, Flags } from "@oclif/core";
 import { defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
 import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 import { validateBundle, BundleValidationError } from "../../../lib/tooling/validateBundle.js";
@@ -33,11 +33,24 @@ export default class ExtensionPush extends IntegrationLayerCommand {
 
   static override examples = [
     "<%= config.bin %> integration-layer extension push",
+    "<%= config.bin %> integration-layer extension push ./src/extension.ts",
+    "<%= config.bin %> integration-layer extension push ./dist/extension.cjs",
     "<%= config.bin %> integration-layer extension push --force",
     "<%= config.bin %> integration-layer extension push --all",
     "<%= config.bin %> integration-layer extension push --source-revision r48211",
     "<%= config.bin %> integration-layer extension push --no-source-revision",
   ];
+
+  static override args = {
+    // One positional, auto-detected by extension: a `.cjs` file is an already-built
+    // bundle uploaded as-is (skipping the build), anything else is an entry source
+    // that is bundled first — so `push ./src/extension.ts` and `push ./dist/extension.cjs`
+    // both work. Omit it to fall back to --entry / --all as before.
+    path: Args.string({
+      description:
+        "extension entry source (.ts/.js) to build, OR a pre-built .cjs bundle to upload as-is; auto-detected by extension. Omit to use --entry / --all.",
+    }),
+  };
 
   static override flags = {
     entry: Flags.string({
@@ -153,21 +166,37 @@ export default class ExtensionPush extends IntegrationLayerCommand {
   }
 
   async run(): Promise<void> {
-    const { flags } = await this.parse(ExtensionPush);
+    const { args, flags } = await this.parse(ExtensionPush);
+
+    // A pre-built `.cjs` path is uploaded as-is; anything else is source to build.
+    const prebuilt = !!args.path && extname(args.path).toLowerCase() === ".cjs";
+    if (args.path && flags.all) {
+      this.error("Pass either a path argument or --all, not both.");
+    }
 
     // Bundle, then VALIDATE before we touch the store. Local check first — it always
     // hard-fails, regardless of --force.
     let outfile: string;
     let sourceFiles: string[];
-    try {
-      ({ outfile, sourceFiles } = await bundleForFlags({
-        all: flags.all,
-        extensionsDir: flags["extensions-dir"],
-        entry: flags.entry,
-        out: flags.out,
-      }));
-    } catch (err) {
-      this.error((err as Error).message);
+    if (prebuilt) {
+      // Already built: skip esbuild and upload the file directly. There is no source
+      // to statically analyse, so sourceFiles is empty — validateBundle still loads
+      // the bundle and checks its shape/SDL coherence below.
+      outfile = args.path as string;
+      sourceFiles = [];
+      this.log(`Using pre-built bundle ${outfile} (skipping build)`);
+    } else {
+      try {
+        ({ outfile, sourceFiles } = await bundleForFlags({
+          all: flags.all,
+          extensionsDir: flags["extensions-dir"],
+          // A positional source path overrides --entry; otherwise use the flag default.
+          entry: args.path ?? flags.entry,
+          out: flags.out,
+        }));
+      } catch (err) {
+        this.error((err as Error).message);
+      }
     }
     let typeDefs: string | null;
     try {
