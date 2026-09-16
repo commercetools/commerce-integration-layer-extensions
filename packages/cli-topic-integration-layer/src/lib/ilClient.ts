@@ -284,6 +284,29 @@ export async function putAllowlist(
   return JSON.parse(text) as { allow: string[]; version: number };
 }
 
+/**
+ * GET/PATCH `…/extension/config` return `{ entries, maskExtensionGraphQLErrors }`,
+ * not a bare array. The typed `maskExtensionGraphQLErrors` flag sits beside the
+ * free-form entries (the operator console owns it); this client only unwraps
+ * `entries` for the config commands. Fail loudly if the body isn't that object —
+ * treating it as an array is how `config list` died with `entries is not iterable`.
+ */
+function unwrapConfigEntries(text: string, verb: "GET" | "PATCH"): ConfigEntry[] {
+  const body: unknown = JSON.parse(text);
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new Error(
+      `${verb} extension/config returned an unexpected body (expected { entries, maskExtensionGraphQLErrors })`,
+    );
+  }
+  const entries = (body as { entries?: unknown }).entries;
+  if (!Array.isArray(entries)) {
+    throw new Error(
+      `${verb} extension/config returned an unexpected body (expected { entries, maskExtensionGraphQLErrors })`,
+    );
+  }
+  return entries as ConfigEntry[];
+}
+
 /** List the project's extension config entries, secret values redacted (`GET …/extension/config`). */
 export async function listConfig(
   baseUrl: string,
@@ -296,13 +319,15 @@ export async function listConfig(
   if (!res.ok) {
     throw new Error(`GET extension/config failed (${res.status}): ${text}`);
   }
-  return JSON.parse(text) as ConfigEntry[];
+  return unwrapConfigEntries(text, "GET");
 }
 
 /**
  * Upsert/delete config entries and return the resulting (redacted) list
  * (`PATCH …/extension/config`). An entry with `value: null` deletes that key. PATCH
  * (not PUT) so a single set/unset touches one key without clobbering the rest.
+ * The body is `{ entries }`, not a bare array — the route also accepts
+ * `maskExtensionGraphQLErrors`, which this client does not set.
  */
 export async function patchConfig(
   baseUrl: string,
@@ -314,13 +339,13 @@ export async function patchConfig(
   const res = await authFetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(entries),
+    body: JSON.stringify({ entries }),
   });
   const text = await res.text();
   if (!res.ok) {
     throw new Error(`PATCH extension/config failed (${res.status}): ${text}`);
   }
-  return JSON.parse(text) as ConfigEntry[];
+  return unwrapConfigEntries(text, "PATCH");
 }
 
 /** The deployed connector's verdict, as the Commerce Integration Layer's invoke proxy returns it. */
