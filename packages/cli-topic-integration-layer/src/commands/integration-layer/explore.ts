@@ -112,13 +112,13 @@ export default class Explore extends IntegrationLayerCommand {
     }),
     "graphql-url": Flags.string({
       description:
-        "GraphQL edge base URL — the router (also settable via IL_GRAPHQL_URL); overrides the URL derived from your login region",
+        "Experience API base URL — the shopper GraphQL edge, served by the router (also settable via IL_GRAPHQL_URL); overrides the URL derived from your login region",
       env: "IL_GRAPHQL_URL",
       helpGroup: "COMMERCE INTEGRATION LAYER",
     }),
     "auth-url": Flags.string({
       description:
-        "identity edge base URL, where sessions are minted (also settable via IL_AUTH_URL); overrides the URL derived from your login region",
+        "Identity API base URL, where sessions are minted (also settable via IL_AUTH_URL); overrides the URL derived from your login region",
       env: "IL_AUTH_URL",
       helpGroup: "COMMERCE INTEGRATION LAYER",
     }),
@@ -135,14 +135,14 @@ export default class Explore extends IntegrationLayerCommand {
     const graphqlUrl = flags["graphql-url"] ?? graphqlEdgeUrlForRegion(principal.getRegion());
     if (!graphqlUrl) {
       throw new Error(
-        "could not resolve the GraphQL edge URL: pass --graphql-url or set IL_GRAPHQL_URL " +
+        "could not resolve the Experience API URL: pass --graphql-url or set IL_GRAPHQL_URL " +
           "(e.g. https://graphql.integration-layer.eu-central-1.aws.commercetools.com)",
       );
     }
     const authUrl = flags["auth-url"] ?? authEdgeUrlForRegion(principal.getRegion());
     if (!authUrl) {
       throw new Error(
-        "could not resolve the identity edge URL: pass --auth-url or set IL_AUTH_URL " +
+        "could not resolve the Identity API URL: pass --auth-url or set IL_AUTH_URL " +
           "(e.g. https://auth.integration-layer.eu-central-1.aws.commercetools.com)",
       );
     }
