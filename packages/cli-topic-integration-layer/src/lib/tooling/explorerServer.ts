@@ -45,9 +45,8 @@ export interface ExplorerServerOptions {
  * Build (but do not listen on) the explorer's server.
  *
  * The edge endpoint is validated ONCE here, not per request: it must be an
- * absolute `http:`/`https:` URL. It comes from the operator's own login region or
- * their explicit `--experience-url` / `CIL_EXPERIENCE_URL`, so this is not a trust
- * boundary — but pinning the scheme up front means a typo or a stray `file://`
+ * absolute `http:`/`https:` URL. It is derived from the operator's own login region,
+ * so this is not a trust boundary — but pinning the scheme up front means a typo or a stray `file://`
  * fails at startup with a clear message rather than at the first query, and the
  * value the proxy uses can never be anything else.
  */
@@ -135,9 +134,9 @@ async function handle(
   }
 
   try {
-    // Not SSRF: `opts.endpoint` is fixed when the server is constructed, from the
-    // operator's OWN login region or their explicit --experience-url/CIL_EXPERIENCE_URL,
-    // and validated to be an absolute http(s) URL there. Nothing in the request
+    // Not SSRF: `opts.endpoint` is fixed when the server is constructed, derived from
+    // the operator's OWN login region, and validated to be an absolute http(s) URL
+    // there. Nothing in the request
     // influences it — the body is forwarded, the destination is not. The server
     // also binds 127.0.0.1, so the only caller is the developer who chose the URL;
     // there is no privilege boundary for a forged request to cross.
