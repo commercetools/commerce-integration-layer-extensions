@@ -142,7 +142,11 @@ export default class Explore extends IntegrationLayerCommand {
     // overridable. Fail loudly rather than guess.
     // `flags["experience-url"]` covers --experience-url, the deprecated --graphql-url
     // alias, and CIL_EXPERIENCE_URL; the old IL_GRAPHQL_URL env is read as a fallback
-    // for one deprecation window, so the new name wins when both are set.
+    // for one deprecation window, so the new name wins when both are set. Using the
+    // old env still works but earns a notice, matching the deprecated flag alias.
+    if (flags["experience-url"] === undefined && process.env.IL_GRAPHQL_URL !== undefined) {
+      this.warn("IL_GRAPHQL_URL is deprecated and will be removed in a future release; use CIL_EXPERIENCE_URL instead.");
+    }
     const graphqlUrl =
       flags["experience-url"] ??
       process.env.IL_GRAPHQL_URL ??
@@ -152,6 +156,9 @@ export default class Explore extends IntegrationLayerCommand {
         "could not resolve the Experience API URL: pass --experience-url or set CIL_EXPERIENCE_URL " +
           "(e.g. https://graphql.integration-layer.eu-central-1.aws.commercetools.com)",
       );
+    }
+    if (flags["identity-url"] === undefined && process.env.IL_AUTH_URL !== undefined) {
+      this.warn("IL_AUTH_URL is deprecated and will be removed in a future release; use CIL_IDENTITY_URL instead.");
     }
     const authUrl =
       flags["identity-url"] ??

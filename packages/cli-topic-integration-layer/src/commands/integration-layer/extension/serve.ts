@@ -269,7 +269,11 @@ export default class ExtensionServe extends IntegrationLayerCommand {
   private resolveAuthEdge(flags: { "identity-url"?: string }): string {
     // `flags["identity-url"]` covers --identity-url, the deprecated --auth-url alias,
     // and CIL_IDENTITY_URL; the old IL_AUTH_URL env is read as a fallback for one
-    // deprecation window, so the new name wins when both are set.
+    // deprecation window, so the new name wins when both are set. Using the old env
+    // still works but earns a notice, matching the deprecated flag alias.
+    if (flags["identity-url"] === undefined && process.env.IL_AUTH_URL !== undefined) {
+      this.warn("IL_AUTH_URL is deprecated and will be removed in a future release; use CIL_IDENTITY_URL instead.");
+    }
     const authUrl =
       flags["identity-url"] ??
       process.env.IL_AUTH_URL ??
