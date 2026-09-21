@@ -17,7 +17,7 @@ and which host each one talks to.
 - [Using it in CI](#using-it-in-ci)
 - [Developing the plugin](#developing-the-plugin)
 
-[docs]: https://docs.commercetools.com/integration-layer
+[docs]: https://docs.commercetools.com/commerce-integration-layer
 
 ## Install
 
@@ -76,8 +76,8 @@ of them from your login Region — you normally set nothing.
 | Edge | Derived host | Serves | Override |
 | --- | --- | --- | --- |
 | Extensions | `https://extensions.integration-layer.<region>.commercetools.com` | the `manage_project` routes: `/<project>/subgraph`, `/<project>/extension/*`, config | `--integration-layer-url` / `INTEGRATION_LAYER_URL` |
-| Experience (router) | `https://graphql.integration-layer.<region>.commercetools.com` | `/<project>/graphql` — where operations run | — |
-| Identity | `https://auth.integration-layer.<region>.commercetools.com` | `POST /<project>/session` — session minting, and the core subgraph the local gateway routes to | — |
+| Experience API (router) | `https://graphql.integration-layer.<region>.commercetools.com` | `/<project>/graphql` — the shopper GraphQL API, where operations run | — |
+| Identity API | `https://auth.integration-layer.<region>.commercetools.com` | `POST /<project>/session` — session minting, and the core subgraph the local gateway routes to | — |
 
 The Experience and Identity edges are always derived from your login Region — there is
 no override. If the Region is absent the command fails loudly with the expected URL
@@ -324,7 +324,7 @@ Locally, errors out if the bundle declares no `apiExtensions`. With `--deployed`
 if the project isn't enrolled or its extension isn't deployed (no deployment / no service
 URL yet).
 
-[apiext]: https://docs.commercetools.com/integration-layer/api-extensions
+[apiext]: https://docs.commercetools.com/commerce-integration-layer/api-extensions
 
 ### `extension serve-api-extension`
 
@@ -504,7 +504,7 @@ pass `--force` explicitly.
 does not match the operator's denylist. `list` prints denials for information — they're
 read-only from here, so a host you have allowed can still be blocked above you.
 
-[extsvc]: https://docs.commercetools.com/integration-layer/schema-extensions
+[extsvc]: https://docs.commercetools.com/commerce-integration-layer/schema-extensions
 
 ### `schema fetch`
 
