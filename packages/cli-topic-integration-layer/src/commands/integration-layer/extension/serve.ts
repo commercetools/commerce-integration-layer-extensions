@@ -197,7 +197,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     }),
     "auth-url": Flags.string({
       description:
-        "identity edge base URL, where --gateway/--all mint their session and reach the core-subgraph /graphql (also settable via IL_AUTH_URL); overrides the URL derived from your login region",
+        "Identity API base URL, where --gateway/--all mint their session and reach the core-subgraph /graphql (also settable via IL_AUTH_URL); overrides the URL derived from your login region",
       env: "IL_AUTH_URL",
       helpGroup: "COMMERCE INTEGRATION LAYER",
     }),
