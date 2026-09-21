@@ -195,12 +195,6 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       description: "directory holding the extension packages (used with --all)",
       default: "extensions",
     }),
-    "auth-url": Flags.string({
-      description:
-        "Identity API base URL, where --gateway/--all mint their session and reach the core-subgraph /graphql (also settable via IL_AUTH_URL); overrides the URL derived from your login region",
-      env: "IL_AUTH_URL",
-      helpGroup: "COMMERCE INTEGRATION LAYER",
-    }),
   };
 
   /**
@@ -209,8 +203,8 @@ export default class ExtensionServe extends IntegrationLayerCommand {
    * served by the identity edge, a DIFFERENT host from the extensions edge
    * ({@link IlContext.baseUrl}, `extensions.`, which serves `/subgraph`). The gateway must
    * route to the core subgraph here, NOT the `graphql.` router edge, whose COMPOSED graph
-   * would double-count the local extension. Overridable via --auth-url / IL_AUTH_URL for
-   * staging zones that don't follow the production host convention.
+   * would double-count the local extension. Derived by convention from the login
+   * region, like the other edges.
    */
   private warnUnrestrictedResolverFetch(reason: string): void {
     this.logToStderr(
@@ -261,12 +255,12 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     return sandboxFetch ? wrapResolverMap(resolvers, sandboxFetch) : resolvers;
   }
 
-  private resolveAuthEdge(flags: { "auth-url"?: string }): string {
-    const authUrl = flags["auth-url"] ?? authEdgeUrlForRegion(this.requirePrincipal().getRegion());
+  private resolveAuthEdge(): string {
+    // Derived by convention from the login region, like the other edges.
+    const authUrl = authEdgeUrlForRegion(this.requirePrincipal().getRegion());
     if (!authUrl) {
       throw new Error(
-        "could not resolve the identity edge URL: pass --auth-url or set IL_AUTH_URL " +
-          "(e.g. https://auth.integration-layer.eu-central-1.aws.commercetools.com)",
+        "could not resolve the Identity API URL from your login region — log in again so the CLI knows which region to reach",
       );
     }
     return authUrl.replace(/\/+$/, "");
@@ -303,7 +297,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the
       // gateway routes to and the /session it mints are on the identity edge, reached via
       // the identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
-      const authUrl = this.resolveAuthEdge(flags);
+      const authUrl = this.resolveAuthEdge();
       integrationLayerGraphqlUrl = `${authUrl}/${encodeURIComponent(projectKey)}/graphql`;
       this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
       integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
@@ -487,7 +481,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
    * re-merges the combined subgraph, and a schema change recomposes + rebuilds the gateway.
    */
   private async runAll(
-    flags: { port: number; entry: string; "extensions-dir": string; "auth-url"?: string } & IlFlagValues,
+    flags: { port: number; entry: string; "extensions-dir": string } & IlFlagValues,
     envWatchLine: string,
   ): Promise<void> {
     const port = flags.port;
@@ -510,7 +504,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the gateway
     // routes to and the /session it mints are on the identity edge, reached via the
     // identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
-    const authUrl = this.resolveAuthEdge(flags);
+    const authUrl = this.resolveAuthEdge();
     const integrationLayerGraphqlUrl = `${authUrl}/${encodeURIComponent(projectKey)}/graphql`;
     this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
     const integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);

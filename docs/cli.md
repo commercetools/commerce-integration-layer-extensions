@@ -76,13 +76,13 @@ of them from your login Region — you normally set nothing.
 | Edge | Derived host | Serves | Override |
 | --- | --- | --- | --- |
 | Extensions | `https://extensions.integration-layer.<region>.commercetools.com` | the `manage_project` routes: `/<project>/subgraph`, `/<project>/extension/*`, config | `--integration-layer-url` / `INTEGRATION_LAYER_URL` |
-| Experience API (router) | `https://graphql.integration-layer.<region>.commercetools.com` | `/<project>/graphql` — the shopper GraphQL API, where operations run | `--graphql-url` / `IL_GRAPHQL_URL` |
-| Identity API | `https://auth.integration-layer.<region>.commercetools.com` | `POST /<project>/session` — session minting, and the core subgraph the local gateway routes to | `--auth-url` / `IL_AUTH_URL` |
+| Experience API (router) | `https://graphql.integration-layer.<region>.commercetools.com` | `/<project>/graphql` — the shopper GraphQL API, where operations run | — |
+| Identity API | `https://auth.integration-layer.<region>.commercetools.com` | `POST /<project>/session` — session minting, and the core subgraph the local gateway routes to | — |
 
-Set an override only to point somewhere that doesn't follow the production host
-convention: a local edge (`http://localhost:8080`) or a staging zone. If the Region is
-absent and no override is set, the command fails loudly with the expected URL shape
-rather than guessing.
+The Experience and Identity edges are always derived from your login Region — there is
+no override. If the Region is absent the command fails loudly with the expected URL
+shape rather than guessing. The Extensions edge can be pointed elsewhere (a local edge
+or a staging zone) with `--integration-layer-url` / `INTEGRATION_LAYER_URL`.
 
 ## Global flags
 
@@ -172,7 +172,7 @@ Offline; no login needed.
 ### `extension serve`
 
 ```
-commercetools integration-layer extension serve [-p 4000] [--entry f] [--compose] [--gateway] [--all] [--auth-url u] [--env-file path]
+commercetools integration-layer extension serve [-p 4000] [--entry f] [--compose] [--gateway] [--all] [--env-file path]
 ```
 
 A live GraphQL server with GraphiQL and esbuild watch, calling your resolvers with the
@@ -420,7 +420,6 @@ commercetools integration-layer extension create-api-extension-input --resource-
 ```
 commercetools integration-layer explore [-p 4000] [--deployed] [--as email]
                                         [--locale l] [--currency c] [--country co]
-                                        [--graphql-url u] [--auth-url u]
 ```
 
 A local GraphQL explorer for your Project's **deployed** edge. One command: it resolves
@@ -434,7 +433,6 @@ paste, no headers to hand-edit.
 | `--as <email>` | run operations as that customer, via an ordinary email/password login. Prompts for the password, or set `IL_CUSTOMER_PASSWORD`. Omit to run anonymously |
 | `--locale`, `--currency`, `--country` | presentment, applied at mint (the only place it can be chosen). Default to the Project's |
 | `-p`, `--port` | default `4000` |
-| `--graphql-url`, `--auth-url` | override the Experience API and Identity API edges for staging zones |
 
 **Two schema sources.** By default it composes locally: your Project's core-subgraph
 SDL plus, when you run it from an extension directory, that extension built from the
