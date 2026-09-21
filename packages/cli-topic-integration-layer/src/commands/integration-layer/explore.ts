@@ -110,17 +110,25 @@ export default class Explore extends IntegrationLayerCommand {
       description: "country prices are selected for, e.g. DE (default: the project's)",
       helpGroup: "PRESENTMENT",
     }),
-    "graphql-url": Flags.string({
+    "experience-url": Flags.string({
       description:
-        "GraphQL edge base URL — the router (also settable via IL_GRAPHQL_URL); overrides the URL derived from your login region",
-      env: "IL_GRAPHQL_URL",
+        "Experience API base URL — the shopper GraphQL edge, served by the router (also settable via CIL_EXPERIENCE_URL); overrides the URL derived from your login region",
+      env: "CIL_EXPERIENCE_URL",
       helpGroup: "COMMERCE INTEGRATION LAYER",
+      // Deprecated hidden alias for one window (old env IL_GRAPHQL_URL read as a
+      // fallback below). The new name wins when both are set.
+      aliases: ["graphql-url"],
+      deprecateAliases: true,
     }),
-    "auth-url": Flags.string({
+    "identity-url": Flags.string({
       description:
-        "identity edge base URL, where sessions are minted (also settable via IL_AUTH_URL); overrides the URL derived from your login region",
-      env: "IL_AUTH_URL",
+        "Identity API base URL, where sessions are minted (also settable via CIL_IDENTITY_URL); overrides the URL derived from your login region",
+      env: "CIL_IDENTITY_URL",
       helpGroup: "COMMERCE INTEGRATION LAYER",
+      // Deprecated hidden alias for one window (old env IL_AUTH_URL read as a
+      // fallback below). The new name wins when both are set.
+      aliases: ["auth-url"],
+      deprecateAliases: true,
     }),
   };
 
@@ -132,17 +140,26 @@ export default class Explore extends IntegrationLayerCommand {
     // The three edges are distinct hosts in the deployed topology (extensions./
     // graphql./auth.), so each is resolved from the login region and independently
     // overridable. Fail loudly rather than guess.
-    const graphqlUrl = flags["graphql-url"] ?? graphqlEdgeUrlForRegion(principal.getRegion());
+    // `flags["experience-url"]` covers --experience-url, the deprecated --graphql-url
+    // alias, and CIL_EXPERIENCE_URL; the old IL_GRAPHQL_URL env is read as a fallback
+    // for one deprecation window, so the new name wins when both are set.
+    const graphqlUrl =
+      flags["experience-url"] ??
+      process.env.IL_GRAPHQL_URL ??
+      graphqlEdgeUrlForRegion(principal.getRegion());
     if (!graphqlUrl) {
       throw new Error(
-        "could not resolve the GraphQL edge URL: pass --graphql-url or set IL_GRAPHQL_URL " +
+        "could not resolve the Experience API URL: pass --experience-url or set CIL_EXPERIENCE_URL " +
           "(e.g. https://graphql.integration-layer.eu-central-1.aws.commercetools.com)",
       );
     }
-    const authUrl = flags["auth-url"] ?? authEdgeUrlForRegion(principal.getRegion());
+    const authUrl =
+      flags["identity-url"] ??
+      process.env.IL_AUTH_URL ??
+      authEdgeUrlForRegion(principal.getRegion());
     if (!authUrl) {
       throw new Error(
-        "could not resolve the identity edge URL: pass --auth-url or set IL_AUTH_URL " +
+        "could not resolve the Identity API URL: pass --identity-url or set CIL_IDENTITY_URL " +
           "(e.g. https://auth.integration-layer.eu-central-1.aws.commercetools.com)",
       );
     }

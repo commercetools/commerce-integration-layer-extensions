@@ -57,7 +57,7 @@ export function edgeUrlForRegion(region: string): string | undefined {
  * The GRAPHQL edge (the integration-router) for a region — where operations are
  * actually served, at `/{project}/graphql`. A distinct host from the extensions
  * edge above: the extensions edge serves the manage_project routes, the graphql edge
- * is the router. `--graphql-url` / `IL_GRAPHQL_URL` overrides it
+ * is the router. `--experience-url` / `CIL_EXPERIENCE_URL` overrides it
  * for non-production zones, which don't follow the convention.
  */
 export function graphqlEdgeUrlForRegion(region: string): string | undefined {
@@ -70,7 +70,7 @@ export function graphqlEdgeUrlForRegion(region: string): string | undefined {
  * The IDENTITY edge for a region — where sessions are minted, at
  * `POST /{project}/session`. Again a distinct host from both of the above: shopper
  * identity, shopper GraphQL, and the machine surface are served on separate
- * ingresses. `--auth-url` / `IL_AUTH_URL` overrides it.
+ * ingresses. `--identity-url` / `CIL_IDENTITY_URL` overrides it.
  */
 export function authEdgeUrlForRegion(region: string): string | undefined {
   const trimmed = region.trim();
