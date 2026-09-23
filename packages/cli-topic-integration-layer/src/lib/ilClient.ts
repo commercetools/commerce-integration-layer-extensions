@@ -299,20 +299,6 @@ export async function fetchBundleSource(
   };
 }
 
-/** Remove the project's extension subgraph from Hive (`DELETE …/extension/subgraph`). */
-export async function deleteExtensionSubgraph(
-  baseUrl: string,
-  projectKey: string,
-  authFetch: AuthFetch,
-): Promise<void> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/subgraph`;
-  const res = await authFetch(url, { method: "DELETE" });
-  if (!res.ok && res.status !== 204) {
-    const text = await res.text();
-    throw new Error(`DELETE extension/subgraph failed (${res.status}): ${text}`);
-  }
-}
-
 /**
  * The project's extension HTTP allowlist: the merchant-tunable `allow` host patterns
  * the extension sandbox's `fetch` may reach, plus the operator `deny` ceiling. A host
