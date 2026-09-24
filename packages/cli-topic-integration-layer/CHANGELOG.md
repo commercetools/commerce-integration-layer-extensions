@@ -1,5 +1,20 @@
 # @commercetools/cli-topic-integration-layer
 
+## 1.0.0
+
+### Major Changes
+
+- 9610344: Remove the `explore` / `extension serve` edge-URL override flags and their environment variables.
+
+  `--graphql-url` / `IL_GRAPHQL_URL` and `--auth-url` / `IL_AUTH_URL` are gone. The Experience (router) and Identity edges are always derived from the logged-in project Region, so the overrides were unnecessary; the command now fails loudly if the Region is missing rather than accepting a URL. The Extensions edge keeps its `--integration-layer-url` / `INTEGRATION_LAYER_URL` override (a Connect configuration key).
+
+- b6f8ecf: Remove `extension delete`. A published extension is replaced by pushing a new bundle. Dropping one means removing the Commerce Integration Layer from the project.
+
+### Patch Changes
+
+- 1849cff: `extension build --all` and `extension serve` build subgraphs with the module list `@apollo/subgraph` 2.15 requires. The plugin now depends on the current Apollo composition, gateway, subgraph, and envelop releases.
+- 3361d5f: Rename the two Commerce Integration Layer APIs in help and error text: the shopper-facing GraphQL edge is now the **Experience API** and the identity/session edge is the **Identity API**. This updates the `explore` and `extension serve` flag descriptions and the "could not resolve …" error messages only — flag and environment-variable names are unchanged in this release.
+
 ## 0.11.0
 
 ### Minor Changes
