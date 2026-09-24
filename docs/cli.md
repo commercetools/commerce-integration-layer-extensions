@@ -62,7 +62,7 @@ Not logged in, an authenticated command fails immediately with
 
 | Needs a login | Runs offline |
 | --- | --- |
-| `explore`, `schema fetch`, `extension push`, `extension status`, `extension delete`, `extension serve-api-extension`, `config *` | `init`, `extension build`, `extension invoke-api-extension`, `extension create-api-extension-input`, `extension serve` (standalone) |
+| `explore`, `schema fetch`, `extension push`, `extension status`, `extension serve-api-extension`, `config *` | `init`, `extension build`, `extension invoke-api-extension`, `extension create-api-extension-input`, `extension serve` (standalone) |
 
 Two commands are conditional: `extension validate` needs a login only for its remote
 half (`--skip remote` makes it fully offline), and `extension serve` needs one only
@@ -232,7 +232,10 @@ commercetools integration-layer extension push [-f] [--all]
                                                [--no-wait] [--wait-timeout 180]
 ```
 
-Build, validate, upload — replacing the Project's stored bundle.
+Build, validate, upload — replacing the Project's stored bundle. A push is how a
+published extension changes: there is no command to unpublish one. Dropping the
+bundle means removing the Commerce Integration Layer from the Project and setting
+it up again.
 
 | Flag | Default | Notes |
 | --- | --- | --- |
@@ -260,15 +263,6 @@ The Project's stored bundle: version, size in bytes, upload time, filename, who
 updated it, and `built from` when the push recorded a revision. It reports the stored
 bundle, not the [lifecycle state](authoring.md#what-happens-after-push) — that verdict
 comes from the wait at the end of a `push`.
-
-### `extension delete`
-
-```
-commercetools integration-layer extension delete [-y]
-```
-
-Removes the extension subgraph from the Project's published graph. Prompts unless
-`-y`/`--yes`.
 
 ### `extension invoke-api-extension`
 
