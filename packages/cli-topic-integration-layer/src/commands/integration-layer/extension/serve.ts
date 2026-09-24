@@ -93,10 +93,11 @@ function buildSubgraph(mod: EvaluatedBundle, sandboxFetch?: typeof fetch): Built
     throw new Error("bundle must export a `resolvers` object");
   }
   const resolvedResolvers = sandboxFetch ? wrapResolverMap(resolvers, sandboxFetch) : resolvers;
-  // `@apollo/subgraph` types `resolvers` as its internal `GraphQLResolverMap`; the
-  // bundle's exports are `unknown` (validated above), so cast through the function's
-  // own parameter type rather than reaching into its `dist/` internals.
-  const moduleArg = { typeDefs: parse(typeDefs), resolvers: resolvedResolvers } as unknown as Parameters<
+  // `@apollo/subgraph` 2.15 takes an array of modules (or a bare DocumentNode), not a
+  // single `{ typeDefs, resolvers }`. It types `resolvers` as its internal
+  // `GraphQLResolverMap`; the bundle's exports are `unknown` (validated above), so cast
+  // through the function's own parameter type rather than reaching into its `dist/` internals.
+  const moduleArg = [{ typeDefs: parse(typeDefs), resolvers: resolvedResolvers }] as unknown as Parameters<
     typeof buildSubgraphSchema
   >[0];
   return { schema: buildSubgraphSchema(moduleArg), typeDefs };

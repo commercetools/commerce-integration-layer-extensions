@@ -159,11 +159,12 @@ export function mergeExtensionSubgraph(modules: ExtensionModule[]): MergedSubgra
   let schema: GraphQLSchema;
   try {
     // `mergeTypeDefs` folds the per-extension subgraphs into one document. `@apollo/subgraph`
-    // types `resolvers` as its internal `GraphQLResolverMap`; cast through the param type.
+    // 2.15 takes an array of modules (or a bare DocumentNode), not `{ typeDefs, resolvers }`.
+    // `resolvers` is typed as its internal `GraphQLResolverMap`; cast through the param type.
     const typeDefs = mergeTypeDefs(sdls);
-    schema = buildSubgraphSchema({ typeDefs, resolvers } as unknown as Parameters<
-      typeof buildSubgraphSchema
-    >[0]);
+    schema = buildSubgraphSchema([
+      { typeDefs, resolvers },
+    ] as unknown as Parameters<typeof buildSubgraphSchema>[0]);
   } catch (err) {
     throw new Error(`extensions do not merge into a single subgraph: ${(err as Error).message}`);
   }
