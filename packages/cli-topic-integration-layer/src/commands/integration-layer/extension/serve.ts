@@ -50,6 +50,7 @@ import {
   wrapResolverMap,
 } from "../../../lib/tooling/sandboxFetch.js";
 import { extensionConfigFromEnv } from "../../../lib/extensionConfig.js";
+import { projectUrl } from "../../../lib/projectUrl.js";
 import {
   parseEnvFile,
   resolveEnvFileLocation,
@@ -299,7 +300,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       // gateway routes to and the /session it mints are on the identity edge, reached via
       // the identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
       const authUrl = this.resolveAuthEdge();
-      integrationLayerGraphqlUrl = `${authUrl}/${encodeURIComponent(projectKey)}/graphql`;
+      integrationLayerGraphqlUrl = `${projectUrl(authUrl, projectKey)}/graphql`;
       this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
       integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
       if (flags.gateway) {
@@ -506,7 +507,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     // routes to and the /session it mints are on the identity edge, reached via the
     // identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
     const authUrl = this.resolveAuthEdge();
-    const integrationLayerGraphqlUrl = `${authUrl}/${encodeURIComponent(projectKey)}/graphql`;
+    const integrationLayerGraphqlUrl = `${projectUrl(authUrl, projectKey)}/graphql`;
     this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
     const integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
     const integrationLayerBearer = await mintAnonymousSession(authUrl, projectKey);

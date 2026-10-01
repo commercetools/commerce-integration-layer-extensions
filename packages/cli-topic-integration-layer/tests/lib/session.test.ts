@@ -32,14 +32,14 @@ describe("mintSession", () => {
   // `/token` — the storefront's OWN same-origin proxy route, not the integration
   // layer's — and every explorer start died on a 404. A stubbed fetch cannot tell
   // you the path is wrong, so this asserts the exact literal.
-  it("posts to /<project>/session — NOT /<project>/token", async () => {
+  it("posts to /<project>/main/session — NOT /<project>/token", async () => {
     const calls = stubFetch(200, { token: "anon-token" });
 
     const session = await mintSession(AUTH, "acme-b2b", { kind: "anonymous" });
 
     expect(session.token).toBe("anon-token");
     expect(session.describe).toBe("anonymous");
-    expect(calls[0].url).toBe(`${AUTH}/acme-b2b/session`);
+    expect(calls[0].url).toBe(`${AUTH}/acme-b2b/main/session`);
     expect(calls[0].url).not.toMatch(/\/token$/);
     expect(sentBody(calls)).toEqual({ grant_type: "anonymous" });
   });
@@ -69,13 +69,13 @@ describe("mintSession", () => {
   it("trims a trailing slash off the auth base so the URL never doubles up", async () => {
     const calls = stubFetch(200, { token: "t" });
     await mintSession(`${AUTH}/`, "p", { kind: "anonymous" });
-    expect(calls[0].url).toBe(`${AUTH}/p/session`);
+    expect(calls[0].url).toBe(`${AUTH}/p/main/session`);
   });
 
   it("url-encodes the project key", async () => {
     const calls = stubFetch(200, { token: "t" });
     await mintSession(AUTH, "a/b", { kind: "anonymous" });
-    expect(calls[0].url).toBe(`${AUTH}/a%2Fb/session`);
+    expect(calls[0].url).toBe(`${AUTH}/a%2Fb/main/session`);
   });
 
   it("surfaces the Commerce Integration Layer's own error description, not a bare status", async () => {
@@ -192,7 +192,7 @@ describe("mintSession presentment", () => {
 // (not the mint path or /session/scope), carry the mint bearer, and swap in the
 // reissued token.
 describe("selectBusinessUnit", () => {
-  it("PUTs to /<project>/session/business-unit with both keys and the mint bearer", async () => {
+  it("PUTs to /<project>/main/session/business-unit with both keys and the mint bearer", async () => {
     const calls = stubFetch(200, { token: "scoped-token" });
 
     const scoped = await selectBusinessUnit(AUTH, "acme-b2b", "mint-bearer", {
@@ -202,7 +202,7 @@ describe("selectBusinessUnit", () => {
 
     expect(scoped.token).toBe("scoped-token");
     expect(scoped.describe).toBe("BU acme-eu / store acme-eu-de");
-    expect(calls[0].url).toBe(`${AUTH}/acme-b2b/session/business-unit`);
+    expect(calls[0].url).toBe(`${AUTH}/acme-b2b/main/session/business-unit`);
     expect(calls[0].init.method).toBe("PUT");
     expect(sentBody(calls)).toEqual({ businessUnitKey: "acme-eu", storeKey: "acme-eu-de" });
     const headers = calls[0].init.headers as Record<string, string>;
@@ -219,7 +219,7 @@ describe("selectBusinessUnit", () => {
       businessUnitKey: "u",
       storeKey: "s",
     });
-    expect(calls[0].url).toBe(`${AUTH}/a%2Fb/session/business-unit`);
+    expect(calls[0].url).toBe(`${AUTH}/a%2Fb/main/session/business-unit`);
   });
 
   it("surfaces a StoreNotInBusinessUnitError description, not a bare status", async () => {

@@ -2,7 +2,7 @@
 //
 // The explorer runs operations against the DEPLOYED edge, so it needs the same
 // credential a storefront would carry: an integration-layer session bearer, minted
-// through the ordinary `POST /<project>/session` endpoint.
+// through the ordinary `POST /<project>/main/session` endpoint.
 //
 // There is deliberately NO privileged/debug path here. The two grants below are the
 // two a real storefront uses — anonymous, and a customer logging in with their own
@@ -18,6 +18,8 @@
 // layer applies its own project-configured defaults when we send none, exactly as
 // it does for a storefront that has no locale switcher. Passing them here is
 // therefore the storefront's own flow, not a debug override.
+
+import { projectUrl } from "../projectUrl.js";
 
 /** Which identity the explorer's proxy runs operations as. */
 export type SessionGrant =
@@ -76,8 +78,7 @@ export async function mintSession(
   grant: SessionGrant,
   presentment: Presentment = {},
 ): Promise<MintedSession> {
-  const base = authUrl.replace(/\/+$/, "");
-  const url = `${base}/${encodeURIComponent(projectKey)}/session`;
+  const url = `${projectUrl(authUrl, projectKey)}/session`;
   const identity =
     grant.kind === "anonymous"
       ? { grant_type: "anonymous" }
@@ -151,8 +152,7 @@ export async function selectBusinessUnit(
   bearer: string,
   scope: BusinessUnitScope,
 ): Promise<ScopedSession> {
-  const base = authUrl.replace(/\/+$/, "");
-  const url = `${base}/${encodeURIComponent(projectKey)}/session/business-unit`;
+  const url = `${projectUrl(authUrl, projectKey)}/session/business-unit`;
 
   const res = await fetch(url, {
     method: "PUT",

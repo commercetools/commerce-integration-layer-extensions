@@ -9,9 +9,9 @@
 // introspection gate. The edge now runs `introspection: false`, so the schema is
 // read over an authenticated API instead of being served at the public edge:
 //
-//   schema      GET <extensions edge>/<project>/schema/api   (--deployed), or the
+//   schema      GET <extensions edge>/<project>/main/schema/api   (--deployed), or the
 //               core subgraph from /subgraph composed locally with your extension
-//   execution   proxied to <graphql edge>/<project>/graphql under a session bearer
+//   execution   proxied to <graphql edge>/<project>/main/graphql under a session bearer
 //
 // AUTH — deliberately ordinary. Operations run as an anonymous shopper, or as a real
 // customer who logs in with their own email and password (`--as`). There is no
@@ -47,6 +47,7 @@ import {
 } from "../../lib/tooling/exploreSchema.js";
 import { mintSession, selectBusinessUnit, type SessionGrant } from "../../lib/tooling/session.js";
 import { createExplorerServer } from "../../lib/tooling/explorerServer.js";
+import { projectUrl } from "../../lib/projectUrl.js";
 
 export default class Explore extends IntegrationLayerCommand {
   static override description =
@@ -200,7 +201,7 @@ export default class Explore extends IntegrationLayerCommand {
       runningAs = `${runningAs} · ${scoped.describe}`;
     }
 
-    const endpoint = `${graphqlUrl.replace(/\/+$/, "")}/${encodeURIComponent(projectKey)}/graphql`;
+    const endpoint = `${projectUrl(graphqlUrl, projectKey)}/graphql`;
     const server = createExplorerServer({
       schema: resolved.schema,
       endpoint,

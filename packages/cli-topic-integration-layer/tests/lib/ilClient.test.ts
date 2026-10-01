@@ -33,7 +33,7 @@ describe("getAllowlist", () => {
 
     expect(result).toEqual({ allow: ["api.vendor.com"], deny: ["*.internal"] });
     const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe(`${BASE}/${PROJECT}/extension/allowlist`);
+    expect(url).toBe(`${BASE}/${PROJECT}/main/extension/allowlist`);
     expect(init?.method ?? "GET").toBe("GET");
   });
 
@@ -57,7 +57,7 @@ describe("putAllowlist", () => {
 
     expect(result).toEqual({ allow: ["api.foo.com", "*.bar.net"], version: 3 });
     const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe(`${BASE}/${PROJECT}/extension/allowlist`);
+    expect(url).toBe(`${BASE}/${PROJECT}/main/extension/allowlist`);
     expect(init?.method).toBe("PUT");
     // The route takes a bare array (full replace), NOT an object.
     expect(JSON.parse(String(init?.body))).toEqual(["api.foo.com", "*.bar.net"]);
@@ -104,7 +104,7 @@ describe("listConfig", () => {
     expect(Array.isArray(result)).toBe(true);
     expect(result.find((e) => e.key === "API_KEY")?.secret).toBe(true);
     const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe(`${BASE}/${PROJECT}/extension/config`);
+    expect(url).toBe(`${BASE}/${PROJECT}/main/extension/config`);
     expect(init?.method ?? "GET").toBe("GET");
   });
 
@@ -158,7 +158,7 @@ describe("patchConfig", () => {
 
     expect(result).toEqual(RETURNED);
     const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe(`${BASE}/${PROJECT}/extension/config`);
+    expect(url).toBe(`${BASE}/${PROJECT}/main/extension/config`);
     expect(init?.method).toBe("PATCH");
     // The route takes `{ entries?, maskExtensionGraphQLErrors? }`, NOT a bare array.
     expect(JSON.parse(String(init?.body))).toEqual({ entries: ENTRIES });
@@ -223,7 +223,7 @@ describe("fetchBundleSource", () => {
     expect(result?.version).toBe(7);
     expect(result?.sourceRevision).toBe("r48211");
     const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe(`${BASE}/${PROJECT}/extension/bundle`);
+    expect(url).toBe(`${BASE}/${PROJECT}/main/extension/bundle`);
     expect(init?.method ?? "GET").toBe("GET");
   });
 
@@ -272,7 +272,7 @@ describe("invokeDeployedApiExtension", () => {
 
     expect(result).toEqual({ status: 200, result: {} });
     const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe(`${BASE}/${PROJECT}/extension/api-extensions/invoke`);
+    expect(url).toBe(`${BASE}/${PROJECT}/main/extension/api-extensions/invoke`);
     expect(init?.method).toBe("POST");
     expect(JSON.parse(String(init?.body))).toEqual(INPUT);
   });

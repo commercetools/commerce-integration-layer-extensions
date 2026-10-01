@@ -75,9 +75,9 @@ of them from your login Region — you normally set nothing.
 
 | Edge | Derived host | Serves | Override |
 | --- | --- | --- | --- |
-| Extensions | `https://extensions.integration-layer.<region>.commercetools.com` | the `manage_project` routes: `/<project>/subgraph`, `/<project>/extension/*`, config | `--integration-layer-url` / `INTEGRATION_LAYER_URL` |
-| Experience API (router) | `https://graphql.integration-layer.<region>.commercetools.com` | `/<project>/graphql` — the shopper GraphQL API, where operations run | — |
-| Identity API | `https://auth.integration-layer.<region>.commercetools.com` | `POST /<project>/session` — session minting, and the core subgraph the local gateway routes to | — |
+| Extensions | `https://extensions.integration-layer.<region>.commercetools.com` | the `manage_project` routes: `/<project>/main/subgraph`, `/<project>/main/extension/*`, config | `--integration-layer-url` / `INTEGRATION_LAYER_URL` |
+| Experience API (router) | `https://graphql.integration-layer.<region>.commercetools.com` | `/<project>/main/graphql` — the shopper GraphQL API, where operations run | — |
+| Identity API | `https://auth.integration-layer.<region>.commercetools.com` | `POST /<project>/main/session` — session minting, and the core subgraph the local gateway routes to | — |
 
 The Experience and Identity edges are always derived from your login Region — there is
 no override. If the Region is absent the command fails loudly with the expected URL

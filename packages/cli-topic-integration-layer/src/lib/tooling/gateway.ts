@@ -13,6 +13,7 @@
 
 import { ApolloGateway, RemoteGraphQLDataSource } from "@apollo/gateway";
 import { INTEGRATION_LAYER_SERVICE } from "./compose.js";
+import { projectUrl } from "../projectUrl.js";
 
 /**
  * Mint an anonymous session and return its bearer token. The gateway attaches it to
@@ -24,8 +25,7 @@ export async function mintAnonymousSession(
   integrationLayerUrl: string,
   projectKey: string,
 ): Promise<string> {
-  const base = integrationLayerUrl.replace(/\/+$/, "");
-  const url = `${base}/${encodeURIComponent(projectKey)}/session`;
+  const url = `${projectUrl(integrationLayerUrl, projectKey)}/session`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },

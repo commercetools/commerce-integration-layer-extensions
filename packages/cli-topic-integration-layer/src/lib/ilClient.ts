@@ -8,6 +8,8 @@
 // `ee-ext` tooling's `remoteValidate.ts` / `push.ts` (which read them from env) and
 // the remaining manage routes (config, status, delete, subgraph).
 
+import { projectUrl } from "./projectUrl.js";
+
 /** A single {key,value,secret} entry of a project's extension config (secret values redacted on read). */
 export interface ConfigEntry {
   key: string;
@@ -78,10 +80,6 @@ export interface RemoteValidationResult {
   comparedToPublished: boolean;
 }
 
-function apiRoot(baseUrl: string, projectKey: string): string {
-  return `${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(projectKey)}`;
-}
-
 /**
  * The authenticated fetch supplied by the command layer — the `CtpAuthFetchFactory` fetch,
  * which injects the `manage_project` bearer and refreshes/retries it. Structurally a
@@ -95,7 +93,7 @@ export async function fetchSubgraphSdl(
   projectKey: string,
   authFetch: AuthFetch,
 ): Promise<string> {
-  const url = `${apiRoot(baseUrl, projectKey)}/subgraph`;
+  const url = `${projectUrl(baseUrl, projectKey)}/subgraph`;
   const res = await authFetch(url, { headers: { accept: "text/plain" } });
   const text = await res.text();
   if (!res.ok) {
@@ -124,7 +122,7 @@ export async function fetchDeployedApiSchemaSdl(
   projectKey: string,
   authFetch: AuthFetch,
 ): Promise<string> {
-  const url = `${apiRoot(baseUrl, projectKey)}/schema/api`;
+  const url = `${projectUrl(baseUrl, projectKey)}/schema/api`;
   const res = await authFetch(url, { headers: { accept: "text/plain" } });
   const text = await res.text();
   if (res.status === 404) {
@@ -146,7 +144,7 @@ export async function remoteValidate(
   authFetch: AuthFetch,
   typeDefs: string,
 ): Promise<RemoteValidationResult> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/validate`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/validate`;
   const res = await authFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -174,7 +172,7 @@ export async function pushBundle(
   filename: string,
   sourceRevision?: string,
 ): Promise<ExtensionMeta> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/bundle`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/bundle`;
   const res = await authFetch(url, {
     method: "PUT",
     headers: {
@@ -204,7 +202,7 @@ export async function fetchExtensionMeta(
   projectKey: string,
   authFetch: AuthFetch,
 ): Promise<ExtensionMeta | null> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/bundle/meta`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/bundle/meta`;
   const res = await authFetch(url, { headers: { accept: "application/json" } });
   if (res.status === 404) return null;
   const text = await res.text();
@@ -265,7 +263,7 @@ export async function fetchBundleSource(
   projectKey: string,
   authFetch: AuthFetch,
 ): Promise<DownloadedBundle | null> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/bundle`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/bundle`;
   const res = await authFetch(url);
   if (res.status === 404) {
     const text = await res.text();
@@ -319,7 +317,7 @@ export async function getAllowlist(
   projectKey: string,
   authFetch: AuthFetch,
 ): Promise<AllowlistView> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/allowlist`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/allowlist`;
   const res = await authFetch(url, { headers: { accept: "application/json" } });
   const text = await res.text();
   if (!res.ok) {
@@ -342,7 +340,7 @@ export async function putAllowlist(
   authFetch: AuthFetch,
   patterns: string[],
 ): Promise<{ allow: string[]; version: number }> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/allowlist`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/allowlist`;
   const res = await authFetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -384,7 +382,7 @@ export async function listConfig(
   projectKey: string,
   authFetch: AuthFetch,
 ): Promise<ConfigEntry[]> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/config`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/config`;
   const res = await authFetch(url, { headers: { accept: "application/json" } });
   const text = await res.text();
   if (!res.ok) {
@@ -406,7 +404,7 @@ export async function patchConfig(
   authFetch: AuthFetch,
   entries: Array<{ key: string; value: string | null; secret?: boolean }>,
 ): Promise<ConfigEntry[]> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/config`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/config`;
   const res = await authFetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -448,7 +446,7 @@ export async function invokeDeployedApiExtension(
   authFetch: AuthFetch,
   input: { action: string; resource: { typeId: string } },
 ): Promise<DeployedInvokeResponse> {
-  const url = `${apiRoot(baseUrl, projectKey)}/extension/api-extensions/invoke`;
+  const url = `${projectUrl(baseUrl, projectKey)}/extension/api-extensions/invoke`;
   const res = await authFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
