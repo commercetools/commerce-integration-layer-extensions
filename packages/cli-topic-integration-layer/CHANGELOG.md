@@ -1,5 +1,11 @@
 # @commercetools/cli-topic-integration-layer
 
+## 1.1.0
+
+### Minor Changes
+
+- eebb1d0: Send the `main` instance segment in every Commerce Integration Layer URL. Requests to the Extensions edge, the Experience API and the Identity API now go to `/<project>/main/…` instead of `/<project>/…`.
+
 ## 1.0.0
 
 ### Major Changes
