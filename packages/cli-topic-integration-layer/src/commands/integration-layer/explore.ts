@@ -5,7 +5,7 @@
 // edge. No tokens to paste, no headers to hand-edit.
 //
 // It replaces two things that were removed: the Merchant Center console's operator
-// GraphQL Explorer, and the router's `/{project}/graphiql` + `x-developer-mode`
+// GraphQL Explorer, and the router's `/{project}/main/graphiql` + `x-developer-mode`
 // introspection gate. The edge now runs `introspection: false`, so the schema is
 // read over an authenticated API instead of being served at the public edge:
 //

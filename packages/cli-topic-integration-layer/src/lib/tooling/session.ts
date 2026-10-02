@@ -65,7 +65,7 @@ export interface ScopedSession {
 }
 
 /**
- * Mint an integration-layer session bearer at `POST <authUrl>/<project>/session`.
+ * Mint an integration-layer session bearer at `POST <authUrl>/<project>/main/session`.
  *
  * `authUrl` is the identity edge, NOT the extensions edge that
  * serves the manage-surface routes — in the deployed topology those are different
@@ -135,7 +135,7 @@ export async function mintSession(
 
 /**
  * Select a business unit and store on an already-minted session, at
- * `PUT <authUrl>/<project>/session/business-unit`.
+ * `PUT <authUrl>/<project>/main/session/business-unit`.
  *
  * This is the SECOND step of the B2B flow: mint cannot take a business unit (the
  * server rejects it), so a customer session is minted first and then scoped here.
