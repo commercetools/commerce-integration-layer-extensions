@@ -336,7 +336,7 @@ it registers on exit; see the [CLI reference](cli.md#extension-serve-api-extensi
 ### The configuration endpoint
 
 For automation that isn't the CLI, the config API takes any `manage_project` bearer at
-`…/<project>/extension/config`. GET and PATCH speak an object envelope
+`…/<project>/main/extension/config`. GET and PATCH speak an object envelope
 `{ entries, maskExtensionGraphQLErrors }` — `entries` is the free-form
 `[{ key, value, secret? }]` list; `maskExtensionGraphQLErrors` is a typed flag
 beside it (the operator console owns that flag; the CLI does not set it). PUT
@@ -350,7 +350,7 @@ still takes a bare array (full replace of the entries).
 
 ```bash
 # Upsert without touching the rest; rotate a secret and drop a stale key
-curl -X PATCH "$INTEGRATION_LAYER_URL/$CTP_PROJECT_KEY/extension/config" \
+curl -X PATCH "$INTEGRATION_LAYER_URL/$CTP_PROJECT_KEY/main/extension/config" \
   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   -d '{ "entries": [
         { "key": "ALGOLIA_API_KEY", "value": "rotated-key", "secret": true },
@@ -407,10 +407,10 @@ project against the session bearer — the router's routing is a hint, not the b
 And the publish path, for the same reason:
 
 ```
-examples/<name>  ──push──▶  Commerce Integration Layer     extension runtime
-  src/extension.ts          PUT /api/<project>/extensions   GET /api/<project>/extensions
-  → esbuild → dist/         (per-project store) ──────────▶ load bundle + serve subgraph
-  → validate (local+remote) ─▶                               + (re)publish SDL, report state
+examples/<name>  ──push──▶  Commerce Integration Layer             extension runtime
+  src/extension.ts          PUT /<project>/main/extension/bundle   GET /api/<project>/extensions
+  → esbuild → dist/         (per-project store) ─────────────────▶ load bundle + serve subgraph
+  → validate (local+remote) ─▶                                      + (re)publish SDL, report state
 ```
 
 The last arrow is the one that catches people out: publishing is the runtime's job,

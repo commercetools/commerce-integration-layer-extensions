@@ -2,7 +2,7 @@
 //
 // The explorer runs operations against the DEPLOYED edge, so it needs the same
 // credential a storefront would carry: an integration-layer session bearer, minted
-// through the ordinary `POST /<project>/session` endpoint.
+// through the ordinary `POST /<project>/main/session` endpoint.
 //
 // There is deliberately NO privileged/debug path here. The two grants below are the
 // two a real storefront uses — anonymous, and a customer logging in with their own
@@ -18,6 +18,8 @@
 // layer applies its own project-configured defaults when we send none, exactly as
 // it does for a storefront that has no locale switcher. Passing them here is
 // therefore the storefront's own flow, not a debug override.
+
+import { projectUrl } from "../projectUrl.js";
 
 /** Which identity the explorer's proxy runs operations as. */
 export type SessionGrant =
@@ -63,7 +65,7 @@ export interface ScopedSession {
 }
 
 /**
- * Mint an integration-layer session bearer at `POST <authUrl>/<project>/session`.
+ * Mint an integration-layer session bearer at `POST <authUrl>/<project>/main/session`.
  *
  * `authUrl` is the identity edge, NOT the extensions edge that
  * serves the manage-surface routes — in the deployed topology those are different
@@ -76,8 +78,7 @@ export async function mintSession(
   grant: SessionGrant,
   presentment: Presentment = {},
 ): Promise<MintedSession> {
-  const base = authUrl.replace(/\/+$/, "");
-  const url = `${base}/${encodeURIComponent(projectKey)}/session`;
+  const url = `${projectUrl(authUrl, projectKey)}/session`;
   const identity =
     grant.kind === "anonymous"
       ? { grant_type: "anonymous" }
@@ -134,7 +135,7 @@ export async function mintSession(
 
 /**
  * Select a business unit and store on an already-minted session, at
- * `PUT <authUrl>/<project>/session/business-unit`.
+ * `PUT <authUrl>/<project>/main/session/business-unit`.
  *
  * This is the SECOND step of the B2B flow: mint cannot take a business unit (the
  * server rejects it), so a customer session is minted first and then scoped here.
@@ -151,8 +152,7 @@ export async function selectBusinessUnit(
   bearer: string,
   scope: BusinessUnitScope,
 ): Promise<ScopedSession> {
-  const base = authUrl.replace(/\/+$/, "");
-  const url = `${base}/${encodeURIComponent(projectKey)}/session/business-unit`;
+  const url = `${projectUrl(authUrl, projectKey)}/session/business-unit`;
 
   const res = await fetch(url, {
     method: "PUT",

@@ -37,7 +37,7 @@ export interface IlFlagValues {
 /**
  * Derive the integration-layer EXTENSIONS edge base URL from the authenticated
  * principal's commercetools region. The extensions edge serves the CLI's
- * `/<project>/subgraph` + `/<project>/extension/*` routes and follows the same host
+ * `/<project>/main/subgraph` + `/<project>/main/extension/*` routes and follows the same host
  * convention as the commercetools API itself
  * (`<svc>.<region>.commercetools.com`, cf. the auth client's
  * `auth.<region>.commercetools.com`), so a login in region `eu-central-1.aws`
@@ -55,7 +55,7 @@ export function edgeUrlForRegion(region: string): string | undefined {
 
 /**
  * The GRAPHQL edge (the integration-router) for a region — where operations are
- * actually served, at `/{project}/graphql`. A distinct host from the extensions
+ * actually served, at `/{project}/main/graphql`. A distinct host from the extensions
  * edge above: the extensions edge serves the manage_project routes, the graphql edge
  * is the router. Derived by convention from the login region; there is no override.
  */
@@ -67,7 +67,7 @@ export function graphqlEdgeUrlForRegion(region: string): string | undefined {
 
 /**
  * The IDENTITY edge for a region — where sessions are minted, at
- * `POST /{project}/session`. Again a distinct host from both of the above: shopper
+ * `POST /{project}/main/session`. Again a distinct host from both of the above: shopper
  * identity, shopper GraphQL, and the machine surface are served on separate
  * ingresses. Derived by convention from the login region; there is no override.
  */

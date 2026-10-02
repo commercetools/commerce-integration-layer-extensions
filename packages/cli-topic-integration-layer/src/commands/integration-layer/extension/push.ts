@@ -8,6 +8,7 @@ import { pushBundle, remoteValidate, type RemoteValidationResult } from "../../.
 import { awaitBundleState, type BundleOutcome } from "../../../lib/awaitBundleState.js";
 import { resolveSourceRevision } from "../../../lib/sourceRevision.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
+import { projectUrl } from "../../../lib/projectUrl.js";
 
 // How often to re-read the bundle's status while waiting. The extension re-reads its
 // bundle on its own ~30s poll, so a tighter interval just adds requests without
@@ -248,7 +249,7 @@ export default class ExtensionPush extends IntegrationLayerCommand {
       );
     }
 
-    const url = `${baseUrl}/${encodeURIComponent(projectKey)}/extension/bundle`;
+    const url = `${projectUrl(baseUrl, projectKey)}/extension/bundle`;
     this.log(`Pushing extension bundle (${bundle.length} bytes) → ${url}`);
     const meta = await pushBundle(baseUrl, projectKey, authFetch, bundle, filename, sourceRevision);
     this.log(`✓ stored revision ${meta.version} (${meta.length} bytes, filename ${meta.filename ?? filename})`);

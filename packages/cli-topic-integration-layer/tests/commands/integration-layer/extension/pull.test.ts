@@ -75,7 +75,7 @@ describe("integration-layer extension pull", () => {
     expect(logs).toContain("version:     3");
     expect(logs).toContain("built from:  r99");
     const [url] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe(`${BASE}/${PROJECT}/extension/bundle`);
+    expect(url).toBe(`${BASE}/${PROJECT}/main/extension/bundle`);
   });
 
   it("refuses to overwrite an existing file without --force, and leaves it untouched", async () => {
