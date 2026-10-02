@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 describe("mintSession", () => {
-  // The Commerce Integration Layer mounts the session router at `/:projectKey/session`
+  // The Commerce Integration Layer mounts the session router at `/:projectKey/:instanceKey/session`
   // (apps/storefront/src/index.ts). An earlier version of this file posted to
   // `/token` — the storefront's OWN same-origin proxy route, not the integration
   // layer's — and every explorer start died on a 404. A stubbed fetch cannot tell

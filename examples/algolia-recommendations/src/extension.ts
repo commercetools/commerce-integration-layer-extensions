@@ -53,7 +53,7 @@ import { algoliasearch } from "algoliasearch";
 
 // --- Algolia connection comes from per-project config (ctx.config), NOT baked
 // into the bundle. The merchant sets it via the Commerce Integration Layer's
-// /extensions/config endpoint; see `algoliaConnection` and the SECRETS note. ---
+// /<project>/main/extension/config endpoint; see `algoliaConnection` and the SECRETS note. ---
 // Recommend model: "bought-together" | "related-products" | "looking-similar".
 const ALGOLIA_MODEL = "related-products";
 const MAX_RECOMMENDATIONS = 5;
@@ -89,7 +89,7 @@ interface ExtensionContext {
   now(): number;
   /**
    * Per-project configuration the merchant set via the Commerce Integration Layer's
-   * `/extensions/config` endpoint (secret values decrypted host-side). A flat
+   * `/<project>/main/extension/config` endpoint (secret values decrypted host-side). A flat
    * string map; empty when nothing is configured.
    */
   config: Readonly<Record<string, string>>;
