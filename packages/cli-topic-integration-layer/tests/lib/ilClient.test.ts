@@ -7,6 +7,7 @@ import {
   patchConfig,
   invokeDeployedApiExtension,
   fetchBundleSource,
+  remoteValidateApiExtensions,
   type AuthFetch,
 } from "../../src/lib/ilClient.js";
 
@@ -301,5 +302,28 @@ describe("invokeDeployedApiExtension", () => {
     await expect(invokeDeployedApiExtension(BASE, PROJECT, authFetch, INPUT)).rejects.toThrow(
       /404.*No extensions-sandbox deployment/,
     );
+  });
+});
+
+describe("remoteValidateApiExtensions", () => {
+  const declarations = [{ key: "a", resourceTypeId: "cart", actions: ["Create"] }];
+
+  it("POSTs the declarations to the dry-run route and resolves null on 200", async () => {
+    const authFetch = stubFetch(new Response(JSON.stringify({ valid: true }), { status: 200 }));
+    expect(await remoteValidateApiExtensions(BASE, PROJECT, authFetch, declarations)).toBeNull();
+    const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe(`${BASE}/${PROJECT}/main/api-extensions/validate`);
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual(declarations);
+  });
+
+  it("resolves the parse error on a 400", async () => {
+    const authFetch = stubFetch(new Response(JSON.stringify({ error: "bad key" }), { status: 400 }));
+    expect(await remoteValidateApiExtensions(BASE, PROJECT, authFetch, declarations)).toBe("bad key");
+  });
+
+  it("throws on any other failure", async () => {
+    const authFetch = stubFetch(new Response("boom", { status: 502 }));
+    await expect(remoteValidateApiExtensions(BASE, PROJECT, authFetch, declarations)).rejects.toThrow(/502/);
   });
 });

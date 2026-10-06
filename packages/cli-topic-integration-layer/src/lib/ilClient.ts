@@ -158,6 +158,32 @@ export async function remoteValidate(
 }
 
 /**
+ * Dry-run the bundle's API Extension declarations (`POST …/api-extensions/validate`):
+ * the connector backend runs the parse the registration PUT runs and writes nothing.
+ * Resolves with the parse error's text when the declarations would be refused, or
+ * null when they would register.
+ */
+export async function remoteValidateApiExtensions(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+  declarations: unknown[],
+): Promise<string | null> {
+  const url = `${projectUrl(baseUrl, projectKey)}/api-extensions/validate`;
+  const res = await authFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(declarations),
+  });
+  const text = await res.text();
+  if (res.status === 400) return (JSON.parse(text) as { error: string }).error;
+  if (!res.ok) {
+    throw new Error(`API Extension validation request failed (${res.status}): ${text}`);
+  }
+  return null;
+}
+
+/**
  * Upload the built bundle, replacing the project's stored one (`PUT …/extension/bundle`).
  *
  * `sourceRevision` (optional) records which of the integrator's revisions this build
