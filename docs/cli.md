@@ -474,11 +474,11 @@ and public endpoints are owned by the Commerce Integration Layer and aren't sett
 a pipeline can update one setting without knowing the rest. The Commerce Integration
 Layer stores the defaults without checking them and later seeds new shopper sessions with
 them, so `set` checks `--language`, `--currency` and `--country` against the languages,
-currencies and countries of the **commercetools project** first (the same lists the
-Merchant Center's dropdowns offer). The project's own spelling is stored, so `--country de`
-saves `DE`; a value the project doesn't present is refused with the list it does present.
-This reads the commercetools project, which the login's `manage_project` scope allows; a
-`--label`-only change makes no such call.
+currencies and countries the project presents (the same lists the Merchant Center's
+dropdowns offer; the Commerce Integration Layer reports them with the settings, so the
+client needs no commercetools scope beyond its own). The project's own spelling is stored,
+so `--country de` saves `DE`; a value the project doesn't present is refused with the list
+it does present.
 
 ```bash
 commercetools integration-layer project-settings set --currency EUR --country DE

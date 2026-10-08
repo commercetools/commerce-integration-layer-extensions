@@ -7,16 +7,15 @@ import type { IlContext } from "../../../src/lib/base.js";
 const BASE = "https://extensions.integration-layer.eu-central-1.aws.commercetools.com";
 const PROJECT = "my-project";
 
-const CT_PROJECT_URL = "https://api.eu-central-1.aws.commercetools.com/my-project";
-// What the commercetools project presents; the stored defaults above are a subset.
-const CT_PROJECT = {
+// What the project presents, as the Commerce Integration Layer reports it with the settings.
+const PRESENTMENT = {
   languages: ["en-US", "de-DE"],
   countries: ["US", "DE", "AT"],
   currencies: ["USD", "EUR"],
 };
 
 const CURRENT = { label: "Acme", language: "en-US", currency: "USD", country: "US" };
-const GET_BODY = { project: CURRENT, platform: { regionId: "eu-central-1" }, version: 2 };
+const GET_BODY = { project: CURRENT, platform: { regionId: "eu-central-1" }, presentment: PRESENTMENT, version: 2 };
 
 async function runCommand(
   Command: typeof SettingsGet | typeof SettingsSet,
@@ -27,12 +26,10 @@ async function runCommand(
   const proto = Command.prototype as unknown as {
     init: () => Promise<void>;
     resolveIlContext: () => Promise<IlContext>;
-    requirePrincipal: () => { getRegion: () => string };
     log: (...a: unknown[]) => void;
   };
   const initSpy = vi.spyOn(proto, "init").mockResolvedValue(undefined);
   const ctxSpy = vi.spyOn(proto, "resolveIlContext").mockResolvedValue(ctx);
-  const principalSpy = vi.spyOn(proto, "requirePrincipal").mockReturnValue({ getRegion: () => "eu-central-1.aws" });
   const out: string[] = [];
   const logSpy = vi.spyOn(proto, "log").mockImplementation((...a: unknown[]) => {
     out.push(a.map(String).join(" "));
@@ -45,7 +42,6 @@ async function runCommand(
   } finally {
     initSpy.mockRestore();
     ctxSpy.mockRestore();
-    principalSpy.mockRestore();
     logSpy.mockRestore();
   }
   return { out: out.join("\n"), error };
@@ -53,8 +49,7 @@ async function runCommand(
 
 /** GET returns the current settings; PUT echoes the body back as `{ project, version }`. */
 function settingsFetch() {
-  return vi.fn(async (url: unknown, init?: RequestInit) => {
-    if (url === CT_PROJECT_URL) return new Response(JSON.stringify(CT_PROJECT), { status: 200 });
+  return vi.fn(async (_url: unknown, init?: RequestInit) => {
     if (init?.method === "PUT") {
       return new Response(JSON.stringify({ project: JSON.parse(String(init.body)), version: 3 }), {
         status: 200,
@@ -109,10 +104,8 @@ describe("integration-layer project-settings set", () => {
 
   it("asks for a value the project has none stored for, instead of sending an incomplete body", async () => {
     const { country: _country, ...legacy } = CURRENT;
-    const fetchImpl = vi.fn(async (u: unknown, init?: RequestInit) =>
-      u === CT_PROJECT_URL
-        ? new Response(JSON.stringify(CT_PROJECT), { status: 200 })
-        : init?.method === "PUT"
+    const fetchImpl = vi.fn(async (_u: unknown, init?: RequestInit) =>
+      init?.method === "PUT"
         ? new Response(JSON.stringify({ project: JSON.parse(String(init.body)), version: 3 }), { status: 200 })
         : new Response(JSON.stringify({ ...GET_BODY, project: legacy }), { status: 200 }),
     );
@@ -128,7 +121,7 @@ describe("integration-layer project-settings set", () => {
     expect(ok.error).toBeUndefined();
   });
 
-  it("validates language, currency and country against the commercetools project", async () => {
+  it("validates language, currency and country against what the project presents", async () => {
     const fetchImpl = settingsFetch();
     const { error } = await runCommand(
       SettingsSet,
@@ -136,7 +129,8 @@ describe("integration-layer project-settings set", () => {
       fetchImpl as unknown as typeof fetch,
     );
     expect(error).toBeUndefined();
-    expect(fetchImpl.mock.calls.some(([u]) => u === CT_PROJECT_URL)).toBe(true);
+    // One GET for the settings and presentment, one PUT — no separate commercetools read.
+    expect(fetchImpl.mock.calls.map(([, i]) => i?.method ?? "GET")).toEqual(["GET", "PUT"]);
   });
 
   it("stores the project's own spelling of a value given in another case", async () => {
@@ -161,20 +155,30 @@ describe("integration-layer project-settings set", () => {
     expect(fetchImpl.mock.calls.some(([, i]) => i?.method === "PUT")).toBe(false);
   });
 
-  it("does not read the commercetools project for a label-only change", async () => {
+  it("does not check anything for a label-only change", async () => {
     const fetchImpl = settingsFetch();
     const { error } = await runCommand(SettingsSet, ["--label", "New"], fetchImpl as unknown as typeof fetch);
     expect(error).toBeUndefined();
-    expect(fetchImpl.mock.calls.some(([u]) => u === CT_PROJECT_URL)).toBe(false);
   });
 
-  it("fails loudly when the commercetools project cannot be read", async () => {
-    const fetchImpl = vi.fn(async (u: unknown, _init?: RequestInit) =>
-      u === CT_PROJECT_URL ? new Response("forbidden", { status: 403 }) : new Response(JSON.stringify(GET_BODY), { status: 200 }),
+  it("fails loudly, saving nothing, when the settings (and so the presentment) cannot be read", async () => {
+    const fetchImpl = vi.fn(async (_u: unknown, _init?: RequestInit) =>
+      new Response(JSON.stringify({ error: "Could not read this project's languages, countries and currencies" }), { status: 502 }),
     );
     const { error } = await runCommand(SettingsSet, ["--country", "DE"], fetchImpl as unknown as typeof fetch);
-    expect(error?.message).toMatch(/403.*forbidden/);
+    expect(error?.message).toMatch(/502.*languages, countries and currencies/);
     expect(fetchImpl.mock.calls.some(([, i]) => i?.method === "PUT")).toBe(false);
+  });
+
+  it("explains when the Commerce Integration Layer does not report the presentment", async () => {
+    const { presentment: _p, ...withoutPresentment } = GET_BODY;
+    const fetchImpl = vi.fn(async (_u: unknown, _init?: RequestInit) =>
+      new Response(JSON.stringify(withoutPresentment), { status: 200 }),
+    );
+    const { error } = await runCommand(SettingsSet, ["--country", "DE"], fetchImpl as unknown as typeof fetch);
+    expect(error?.message).toMatch(/did not report the project's languages, countries and currencies/);
+    const ok = await runCommand(SettingsSet, ["--label", "x"], fetchImpl as unknown as typeof fetch);
+    expect(ok.error).toBeUndefined();
   });
 
   it("errors without any flag and does not call the API", async () => {

@@ -76,7 +76,10 @@ function idpFetch(stored: object | null) {
     if (init?.method === "DELETE") return new Response(null, { status: 204 });
     return stored
       ? new Response(JSON.stringify(stored), { status: 200 })
-      : new Response("not found", { status: 404 });
+      : new Response(JSON.stringify({ error: "No IdP configured" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
   });
 }
 
@@ -100,6 +103,19 @@ describe("integration-layer idp-login get", () => {
   it("says so when nothing is configured", async () => {
     const { out } = await runCommand(IdpLoginGet, [], asFetch(idpFetch(null)));
     expect(out).toContain("No IdP login is configured");
+  });
+});
+
+describe("integration-layer idp-login against an edge without the route", () => {
+  it("reports the failure instead of 'not configured' when the 404 is not the route's own", async () => {
+    const html = vi.fn(async () =>
+      new Response("<!DOCTYPE html><title>Error</title>", { status: 404, headers: { "content-type": "text/html" } }),
+    );
+    const get = await runCommand(IdpLoginGet, [], html as unknown as typeof fetch);
+    expect(get.error?.message).toMatch(/GET idp failed \(404\)/);
+    expect(get.out).not.toContain("No IdP login is configured");
+    const del = await runCommand(IdpLoginDelete, ["--force"], html as unknown as typeof fetch);
+    expect(del.error?.message).toMatch(/GET idp failed \(404\)/);
   });
 });
 

@@ -4,7 +4,7 @@ import {
   putProjectSettings,
   type ProjectSettings,
 } from "../../../lib/ilClient.js";
-import { canonicalisePresentment, fetchProjectPresentment } from "../../../lib/ctProject.js";
+import { canonicalisePresentment } from "../../../lib/presentment.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
 
 export default class SettingsSet extends IntegrationLayerCommand {
@@ -39,28 +39,27 @@ export default class SettingsSet extends IntegrationLayerCommand {
 
     const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
 
+    // The route replaces the whole section, so merge onto the current values.
+    const { project: current, presentment } = await getProjectSettings(baseUrl, projectKey, authFetch);
+
     // The Commerce Integration Layer stores these defaults unchecked and later seeds new
-    // sessions with them, so a value the project doesn't present would only fail there.
-    // Check the ones being changed against the commercetools project, as the Merchant
-    // Center's dropdowns do. A label-only change needs no commercetools call.
-    const presented = (["language", "currency", "country"] as const).filter((k) => patch[k] !== undefined);
-    if (presented.length > 0) {
-      const presentment = await fetchProjectPresentment(
-        this.requirePrincipal().getRegion(),
-        projectKey,
-        authFetch,
-      );
-      for (const field of presented) {
-        try {
-          patch[field] = canonicalisePresentment(presentment, projectKey, field, patch[field]!);
-        } catch (e) {
-          this.error((e as Error).message);
-        }
+    // sessions with them, so check the ones being changed against what the project
+    // presents (which it reports with the settings), as the Merchant Center's dropdowns do.
+    for (const field of ["language", "currency", "country"] as const) {
+      if (patch[field] === undefined) continue;
+      if (presentment === undefined) {
+        this.error(
+          "The Commerce Integration Layer did not report the project's languages, countries and currencies, so " +
+            `--${field} cannot be checked — it may be an older version.`,
+        );
+      }
+      try {
+        patch[field] = canonicalisePresentment(presentment, projectKey, field, patch[field]);
+      } catch (e) {
+        this.error((e as Error).message);
       }
     }
 
-    // The route replaces the whole section, so merge onto the current values.
-    const { project: current } = await getProjectSettings(baseUrl, projectKey, authFetch);
     const merged: ProjectSettings = {
       label: current.label,
       language: current.language,

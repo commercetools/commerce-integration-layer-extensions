@@ -365,6 +365,18 @@ export interface ProjectSettings {
   country: string;
 }
 
+/**
+ * What the commercetools project can be presented in: BCP-47 language tags, ISO 3166-1
+ * countries and ISO 4217 currencies. The Commerce Integration Layer reads it from the
+ * project and reports it with the settings, so a caller can offer only values the platform
+ * will accept for `language` / `currency` / `country`.
+ */
+export interface ProjectPresentment {
+  languages: string[];
+  countries: string[];
+  currencies: string[];
+}
+
 /** Which Checkout mode an Application runs in; the storefront mounts the matching flow. */
 export type CheckoutMode = "COMPLETE" | "PAYMENT_ONLY";
 
@@ -390,14 +402,20 @@ export type ProjectSection = ProjectSettings & { checkout?: CheckoutConfig };
 
 /**
  * GET the project's settings (`GET …/settings`): the editable {@link ProjectSettings}
- * plus the operator-owned `platform.regionId`, returned read-only. The project section
+ * plus the operator-owned `platform.regionId` (read-only) and the project's
+ * {@link ProjectPresentment}. The project section
  * can also carry a `checkout` config; that has its own route and is not modelled here.
  */
 export async function getProjectSettings(
   baseUrl: string,
   projectKey: string,
   authFetch: AuthFetch,
-): Promise<{ project: ProjectSection; platform: { regionId: string }; version: number }> {
+): Promise<{
+  project: ProjectSection;
+  platform: { regionId: string };
+  presentment: ProjectPresentment;
+  version: number;
+}> {
   const url = `${projectUrl(baseUrl, projectKey)}/settings`;
   const res = await authFetch(url, { headers: { accept: "application/json" } });
   const text = await res.text();
@@ -407,6 +425,7 @@ export async function getProjectSettings(
   return JSON.parse(text) as {
     project: ProjectSection;
     platform: { regionId: string };
+    presentment: ProjectPresentment;
     version: number;
   };
 }
@@ -587,8 +606,12 @@ export async function getIdpConfig(
 ): Promise<IdpConfig | null> {
   const url = `${projectUrl(baseUrl, projectKey)}/idp`;
   const res = await authFetch(url, { headers: { accept: "application/json" } });
-  if (res.status === 404) return null;
   const text = await res.text();
+  // The route answers 404 with a JSON body when no IdP is configured. Any other 404 (an
+  // HTML page from an edge that doesn't serve the route) is a failure, not "none".
+  if (res.status === 404 && (res.headers.get("content-type") ?? "").includes("application/json")) {
+    return null;
+  }
   if (!res.ok) {
     throw new Error(`GET idp failed (${res.status}): ${text}`);
   }
