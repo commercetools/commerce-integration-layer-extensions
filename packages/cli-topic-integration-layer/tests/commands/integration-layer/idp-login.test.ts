@@ -135,6 +135,45 @@ describe("integration-layer idp-login set", () => {
     expect(out).not.toContain("s3cret");
   });
 
+  it("sets every field: endpoints, client, redirect, matching and all five claims", async () => {
+    const f = idpFetch(null);
+    const { error } = await runCommand(
+      IdpLoginSet,
+      [
+        ...FULL_FLAGS,
+        "--authorization-endpoint", "https://idp.example.com/authorize",
+        "--client-secret", "s3cret",
+        "--match-strategy", "email",
+        "--claim-external-id", "oid",
+        "--claim-email", "upn",
+        "--claim-first-name", "first",
+        "--claim-last-name", "last",
+        "--claim-phone", "tel",
+      ],
+      asFetch(f),
+    );
+    expect(error).toBeUndefined();
+    expect(JSON.parse(String(putOf(f)![1]?.body))).toEqual({
+      issuer: "https://idp.example.com",
+      tokenEndpoint: "https://idp.example.com/token",
+      revocationEndpoint: "https://idp.example.com/revoke",
+      jwksUri: "https://idp.example.com/jwks",
+      authorizationEndpoint: "https://idp.example.com/authorize",
+      clientId: "abc",
+      clientSecret: "s3cret",
+      redirectUri: "https://shop.example.com/callback",
+      claims: { externalId: "oid", email: "upn", firstName: "first", lastName: "last", phone: "tel" },
+      matchStrategy: "email",
+    });
+  });
+
+  it("rejects a match strategy other than externalId or email", async () => {
+    const f = idpFetch(STORED);
+    const { error } = await runCommand(IdpLoginSet, ["--match-strategy", "phone"], asFetch(f));
+    expect(error).toBeDefined();
+    expect(putOf(f)).toBeUndefined();
+  });
+
   it("lists everything missing on a first save", async () => {
     const f = idpFetch(null);
     const { error } = await runCommand(IdpLoginSet, ["--issuer", "https://idp.example.com"], asFetch(f));
@@ -170,6 +209,42 @@ describe("integration-layer idp-login set", () => {
     const f = idpFetch({ ...STORED, authorizationEndpoint: "https://idp.example.com/auth" });
     await runCommand(IdpLoginSet, ["--authorization-endpoint", ""], asFetch(f));
     expect(JSON.parse(String(putOf(f)![1]?.body)).authorizationEndpoint).toBeUndefined();
+  });
+
+  it.each([
+    ["--token-endpoint", "idp.example.com/token"],
+    ["--revocation-endpoint", "ftp://idp.example.com/revoke"],
+    ["--jwks-uri", "https://user:pw@idp.example.com/jwks"],
+  ])("rejects %s that is not an absolute http(s) URL without credentials", async (flag, value) => {
+    const f = idpFetch(STORED);
+    const { error } = await runCommand(IdpLoginSet, [flag, value], asFetch(f));
+    expect(error?.message).toContain(`${flag} must be an absolute http(s) URL without credentials`);
+    expect(putOf(f)).toBeUndefined();
+  });
+
+  it("accepts http as well as https endpoints", async () => {
+    const f = idpFetch(STORED);
+    const { error } = await runCommand(IdpLoginSet, ["--jwks-uri", "http://localhost:8080/jwks"], asFetch(f));
+    expect(error).toBeUndefined();
+  });
+
+  it("checks the endpoints on a first save too", async () => {
+    const f = idpFetch(null);
+    const flags = FULL_FLAGS.map((v) => (v === "https://idp.example.com/token" ? "not a url" : v));
+    const { error } = await runCommand(IdpLoginSet, [...flags, "--client-secret", "s"], asFetch(f));
+    expect(error?.message).toMatch(/--token-endpoint must be an absolute http\(s\) URL/);
+    expect(putOf(f)).toBeUndefined();
+  });
+
+  it("treats a whitespace-only secret as not given", async () => {
+    const f = idpFetch(null);
+    const { error } = await runCommand(IdpLoginSet, [...FULL_FLAGS, "--client-secret", "   "], asFetch(f));
+    expect(error?.message).toMatch(/--client-secret/);
+    expect(putOf(f)).toBeUndefined();
+
+    const kept = idpFetch(STORED);
+    await runCommand(IdpLoginSet, ["--client-id", "x", "--client-secret", "  "], asFetch(kept));
+    expect(JSON.parse(String(putOf(kept)![1]?.body)).clientSecret).toBe("");
   });
 
   it("rejects an empty required value", async () => {

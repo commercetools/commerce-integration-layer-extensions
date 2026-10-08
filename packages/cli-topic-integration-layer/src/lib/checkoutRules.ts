@@ -31,6 +31,9 @@ export function buildRule(input: {
 }): CheckoutRule {
   const applicationKey = typeof input.applicationKey === "string" ? input.applicationKey.trim() : "";
   if (!applicationKey) throw new Error("A rule needs a Checkout Application key.");
+  if (input.mode === undefined || input.mode === null || input.mode === "") {
+    throw new Error(`A rule needs a mode (${CHECKOUT_MODES.join(" or ")}).`);
+  }
   if (!CHECKOUT_MODES.includes(input.mode as CheckoutMode)) {
     throw new Error(`Invalid mode '${String(input.mode)}' (use ${CHECKOUT_MODES.join(" or ")}).`);
   }

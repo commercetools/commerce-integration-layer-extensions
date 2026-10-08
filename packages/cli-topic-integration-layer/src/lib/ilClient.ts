@@ -472,6 +472,79 @@ export async function putCheckoutConfig(
   return JSON.parse(text) as { checkout: CheckoutConfig; version: number };
 }
 
+/**
+ * A field named in the merchant's own commercetools vocabulary — never a generated
+ * GraphQL name, which is allocated per build. `space` is `customField` (a custom Type's
+ * field) or `attribute` (a product attribute); only the Commerce Integration Layer
+ * interprets it.
+ */
+export interface SourceCoordinate {
+  space: string;
+  typeKey: string;
+  fieldName: string;
+}
+
+/** Why a stored rule is not in force. */
+export type VisibilityReason = "noSuchType" | "noSuchField" | "notInSchema";
+
+/**
+ * One row of `GET …/schema/visibility`: a field the merchant authored, whether a rule
+ * hides it, and — when a stored rule does not take effect — why. `fieldType` is present
+ * exactly when the field exists in commercetools. A rule exists for a row iff
+ * `active || reason !== undefined`.
+ */
+export interface FieldVisibilityRow {
+  coordinate: SourceCoordinate;
+  fieldType?: string;
+  active: boolean;
+  reason?: VisibilityReason;
+  notInSchemaReason?: string;
+}
+
+/** GET the project's field-visibility view: one annotated row per custom field and per stored rule. */
+export async function getFieldVisibility(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+): Promise<{ fields: FieldVisibilityRow[]; version: number }> {
+  const url = `${projectUrl(baseUrl, projectKey)}/schema/visibility`;
+  const res = await authFetch(url, { headers: { accept: "application/json" } });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GET schema/visibility failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as { fields: FieldVisibilityRow[]; version: number };
+}
+
+/**
+ * Replace the hidden-field rule set (`PUT …/schema/visibility`, a bare array of source
+ * coordinates). Only the structure is validated: a well-formed rule for a field that
+ * does not exist yet is stored, which is how a field is hidden before it is created.
+ * `publishPending` means the rules are saved but the published schema is behind them.
+ */
+export async function putFieldVisibility(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+  hiddenFields: SourceCoordinate[],
+): Promise<{ hiddenFields: SourceCoordinate[]; version: number; publishPending: boolean }> {
+  const url = `${projectUrl(baseUrl, projectKey)}/schema/visibility`;
+  const res = await authFetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(hiddenFields),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`PUT schema/visibility failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as {
+    hiddenFields: SourceCoordinate[];
+    version: number;
+    publishPending: boolean;
+  };
+}
+
 /** Which external-IdP token claim feeds each commercetools customer field. */
 export interface IdpClaimMapping {
   externalId: string;

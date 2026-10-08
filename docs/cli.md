@@ -471,7 +471,14 @@ the display label and the default language, currency and presentment country. Th
 and public endpoints are owned by the Commerce Integration Layer and aren't settable.
 
 `set` changes only the fields you pass and keeps the others at their current value, so
-a pipeline can update one setting without knowing the rest:
+a pipeline can update one setting without knowing the rest. The Commerce Integration
+Layer stores the defaults without checking them and later seeds new shopper sessions with
+them, so `set` checks `--language`, `--currency` and `--country` against the languages,
+currencies and countries of the **commercetools project** first (the same lists the
+Merchant Center's dropdowns offer). The project's own spelling is stored, so `--country de`
+saves `DE`; a value the project doesn't present is refused with the list it does present.
+This reads the commercetools project, which the login's `manage_project` scope allows; a
+`--label`-only change makes no such call.
 
 ```bash
 commercetools integration-layer project-settings set --currency EUR --country DE
@@ -498,7 +505,9 @@ redirect URI and client secret; the claim mapping defaults to `sub`, `email`,
 `given_name`, `family_name` and `phone_number`, matching by external ID. After that,
 `set` changes only the flags you pass, and leaving the secret out keeps the stored one.
 Pass the secret as the `IDP_CLIENT_SECRET` environment variable rather than a flag, so
-it stays out of the process list and shell history. `--authorization-endpoint ''`
+it stays out of the process list and shell history. The token, revocation and JWKS endpoints
+must be absolute `http(s)` URLs without embedded credentials — the Commerce Integration
+Layer refuses anything else, and `set` tells you before sending. `--authorization-endpoint ''`
 clears the optional authorization endpoint.
 
 `delete` disables IdP login for the project, so it prompts for confirmation; `--force`
@@ -545,6 +554,52 @@ commercetools integration-layer checkout-rules set --file checkout-rules.json --
 At least one rule must remain, so `remove` refuses to drop the last one. Without a TTY
 the confirming commands refuse unless `--force` is given. Checkout rules have their own
 route, so `project-settings set` never overwrites them.
+
+### `field-visibility`
+
+```
+commercetools integration-layer field-visibility list [--hidden] [--json]
+commercetools integration-layer field-visibility hide --type-key <KEY> [--space customField|attribute] <FIELD...>
+commercetools integration-layer field-visibility show --type-key <KEY> [--space customField|attribute] <FIELD...> [--force]
+commercetools integration-layer field-visibility set  --file <PATH|-> [--force]
+```
+
+Which of your own commercetools custom fields and product attributes a storefront can
+select — the picker on the Merchant Center **Schema** tab. A hidden field is still
+resolvable internally, so your extension can read it with `@requires`; it is just absent
+from the public API schema, so a shopper can neither query nor discover it.
+
+Fields are named by **your own identifiers** — the custom Type's (or Product Type's) key
+and the field's name — never a generated GraphQL name, which changes with the rest of the
+project. `--space` is `customField` (the default) for a custom Type's field and
+`attribute` for a product attribute.
+
+| Command | Effect |
+| --- | --- |
+| `list` | every field, grouped by type, marked `hidden` or `visible`; a rule that does nothing says why |
+| `hide` | read-modify-write: adds the fields of one type to the hidden set |
+| `show` | read-modify-write: removes their rules; confirms unless `--force` |
+| `set` | **replaces the whole hidden set** from a JSON file (`-` for stdin); confirms unless `--force` |
+
+`show` and `set` make fields publicly selectable, so they prompt; without a TTY they
+refuse unless `--force` is given. For a pipeline, keep the set in version control:
+
+```json
+[
+  { "space": "customField", "typeKey": "internal-ops", "fieldName": "costPrice" },
+  { "space": "attribute", "typeKey": "shoes", "fieldName": "internalCode" }
+]
+```
+
+**A rule can be written before its field exists** — `hide` notes this and stores it. That
+is the safe order: there is no moment the new field is public. `list` shows such a rule as
+not in force until the field appears.
+
+Every save republishes the schema, and the command waits for the outcome: it prints
+`The schema was republished.` on success. If the rules were stored but the republish failed,
+the published schema doesn't reflect them yet — a hidden field is still public — so the
+command exits with code **2** and says so. Re-run it, or use “Refresh schema” on the
+Merchant Center Schema tab.
 
 ### `allowlist`
 

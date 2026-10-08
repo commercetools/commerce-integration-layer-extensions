@@ -90,6 +90,7 @@ describe("parseRules", () => {
     ["not json", /not valid JSON/],
     ["[]", /At least one rule/],
     ['[{"applicationKey":"","mode":"COMPLETE"}]', /Rule 1: .*Application key/],
+    ['[{"applicationKey":"a"}]', /Rule 1: A rule needs a mode \(PAYMENT_ONLY or COMPLETE\)/],
     ['[{"applicationKey":"a","mode":"NOPE"}]', /Invalid mode 'NOPE'/],
     ['[{"applicationKey":"a","mode":"COMPLETE","countries":["DEU"]}]', /'DEU' is not a valid country/],
     ['[{"applicationKey":"a","mode":"COMPLETE","stores":["a b"]}]', /'a b' is not a valid store key/],
@@ -131,6 +132,17 @@ describe("integration-layer checkout-rules set", () => {
     expect(out).toContain("version 5");
   });
 
+  it("sets every per-rule field from the file: applicationKey, mode, countries, stores", async () => {
+    const f = checkoutFetch(undefined);
+    const rules = [
+      { countries: ["DE", "AT"], stores: ["web", "app"], applicationKey: "full", mode: "COMPLETE" },
+      { applicationKey: "minimal", mode: "PAYMENT_ONLY" },
+    ];
+    const { error } = await runCommand(CheckoutRulesSet, ["--file", file(JSON.stringify(rules)), "--force"], asFetch(f));
+    expect(error).toBeUndefined();
+    expect(putRules(f)).toEqual(rules);
+  });
+
   it("rejects an invalid file without calling the API", async () => {
     const f = checkoutFetch(RULES);
     const path = file('[{"applicationKey":"a","mode":"BAD"}]');
@@ -165,6 +177,21 @@ describe("integration-layer checkout-rules add", () => {
       applicationKey: "new",
       mode: "COMPLETE",
     });
+  });
+
+  it("accepts both modes", async () => {
+    for (const mode of ["COMPLETE", "PAYMENT_ONLY"]) {
+      const f = checkoutFetch(undefined);
+      await runCommand(CheckoutRulesAdd, ["--application-key", "a", "--mode", mode], asFetch(f));
+      expect(putRules(f)).toEqual([{ applicationKey: "a", mode }]);
+    }
+  });
+
+  it("rejects a mode other than COMPLETE or PAYMENT_ONLY", async () => {
+    const f = checkoutFetch(undefined);
+    const { error } = await runCommand(CheckoutRulesAdd, ["--application-key", "a", "--mode", "FULL"], asFetch(f));
+    expect(error).toBeDefined();
+    expect(putOf(f)).toBeUndefined();
   });
 
   it("starts the list when none is configured, defaulting to PAYMENT_ONLY", async () => {

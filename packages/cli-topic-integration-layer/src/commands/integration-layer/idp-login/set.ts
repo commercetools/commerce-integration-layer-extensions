@@ -5,6 +5,7 @@ import {
   type IdpClaimMapping,
   type IdpConfigInput,
 } from "../../../lib/ilClient.js";
+import { isHttpUrlWithoutCredentials } from "../../../lib/httpUrl.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
 
 // What the Merchant Center form pre-fills for a project with no IdP yet.
@@ -88,7 +89,8 @@ export default class IdpLoginSet extends IntegrationLayerCommand {
       "redirect-uri": given("redirect-uri") ?? current?.redirectUri,
     };
     const missing = REQUIRED.filter((name) => !have[name]).map((name) => `--${name}`);
-    const secret = given("client-secret") ?? "";
+    // The Commerce Integration Layer trims the secret, so a blank one means "not given".
+    const secret = given("client-secret")?.trim() ?? "";
     // A first save must supply the secret; an update may keep the stored one.
     if (!current?.hasClientSecret && !secret) {
       missing.push("--client-secret (or IDP_CLIENT_SECRET)");
@@ -97,6 +99,14 @@ export default class IdpLoginSet extends IntegrationLayerCommand {
       this.error(
         `No IdP login is configured for '${projectKey}' yet; missing required: ${missing.join(", ")}`,
       );
+    }
+
+    // The endpoints the Commerce Integration Layer itself calls: refused there if they
+    // are not plain http(s) URLs, but only at save time — check them first.
+    for (const name of ["token-endpoint", "revocation-endpoint", "jwks-uri"] as const) {
+      if (!isHttpUrlWithoutCredentials(have[name]!)) {
+        this.error(`--${name} must be an absolute http(s) URL without credentials (got '${have[name]}').`);
+      }
     }
 
     const claims: IdpClaimMapping = { ...(current?.claims ?? DEFAULT_CLAIMS) };

@@ -45,6 +45,8 @@ commercetools integration-layer idp-login get|set|delete          # external Ope
 
 commercetools integration-layer checkout-rules get|add|remove|set   # which Checkout Application serves which shopper
 
+commercetools integration-layer field-visibility list|hide|show|set   # custom fields hidden from the public API
+
 commercetools integration-layer --version                   # the installed plugin version [offline]
 ```
 
