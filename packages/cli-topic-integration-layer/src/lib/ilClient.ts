@@ -365,6 +365,29 @@ export interface ProjectSettings {
   country: string;
 }
 
+/** Which Checkout mode an Application runs in; the storefront mounts the matching flow. */
+export type CheckoutMode = "COMPLETE" | "PAYMENT_ONLY";
+
+/**
+ * One checkout routing rule: which Checkout Application to name for a shopper it
+ * matches. `countries` (ISO 3166-1 alpha-2) and `stores` (store keys) are each
+ * OR-matched; an absent list means "any" on that axis.
+ */
+export interface CheckoutRule {
+  countries?: string[];
+  stores?: string[];
+  applicationKey: string;
+  mode: CheckoutMode;
+}
+
+/** The project's commercetools Checkout configuration: an ORDERED rule list, first match wins. */
+export interface CheckoutConfig {
+  rules: CheckoutRule[];
+}
+
+/** The `project` section as read: the four settings plus the checkout config, once configured. */
+export type ProjectSection = ProjectSettings & { checkout?: CheckoutConfig };
+
 /**
  * GET the project's settings (`GET …/settings`): the editable {@link ProjectSettings}
  * plus the operator-owned `platform.regionId`, returned read-only. The project section
@@ -374,7 +397,7 @@ export async function getProjectSettings(
   baseUrl: string,
   projectKey: string,
   authFetch: AuthFetch,
-): Promise<{ project: ProjectSettings; platform: { regionId: string }; version: number }> {
+): Promise<{ project: ProjectSection; platform: { regionId: string }; version: number }> {
   const url = `${projectUrl(baseUrl, projectKey)}/settings`;
   const res = await authFetch(url, { headers: { accept: "application/json" } });
   const text = await res.text();
@@ -382,7 +405,7 @@ export async function getProjectSettings(
     throw new Error(`GET settings failed (${res.status}): ${text}`);
   }
   return JSON.parse(text) as {
-    project: ProjectSettings;
+    project: ProjectSection;
     platform: { regionId: string };
     version: number;
   };
@@ -411,6 +434,42 @@ export async function putProjectSettings(
     throw new Error(`PUT settings failed (${res.status}): ${text}`);
   }
   return JSON.parse(text) as { project: ProjectSettings; version: number };
+}
+
+/**
+ * The project's checkout rules, or `undefined` when none are configured. They are read
+ * with the project settings (`project.checkout`) but written on their own route.
+ */
+export async function getCheckoutConfig(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+): Promise<CheckoutConfig | undefined> {
+  const { project } = await getProjectSettings(baseUrl, projectKey, authFetch);
+  return project.checkout;
+}
+
+/**
+ * Replace the project's checkout rules (`PUT …/checkout`). Its own route, so it never
+ * clobbers the settings. Returns the stored config and the config's new version.
+ */
+export async function putCheckoutConfig(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+  checkout: CheckoutConfig,
+): Promise<{ checkout: CheckoutConfig; version: number }> {
+  const url = `${projectUrl(baseUrl, projectKey)}/checkout`;
+  const res = await authFetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(checkout),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`PUT checkout failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as { checkout: CheckoutConfig; version: number };
 }
 
 /** Which external-IdP token claim feeds each commercetools customer field. */

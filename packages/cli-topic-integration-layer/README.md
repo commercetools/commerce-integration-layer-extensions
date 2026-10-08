@@ -43,6 +43,8 @@ commercetools integration-layer project-settings get|set          # project labe
 
 commercetools integration-layer idp-login get|set|delete          # external OpenID Connect IdP for shopper login
 
+commercetools integration-layer checkout-rules get|add|remove|set   # which Checkout Application serves which shopper
+
 commercetools integration-layer --version                   # the installed plugin version [offline]
 ```
 

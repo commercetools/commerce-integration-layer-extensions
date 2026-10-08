@@ -504,6 +504,48 @@ clears the optional authorization endpoint.
 `delete` disables IdP login for the project, so it prompts for confirmation; `--force`
 skips it, and without a TTY it refuses unless `--force` is given.
 
+### `checkout-rules`
+
+```
+commercetools integration-layer checkout-rules get [--json]
+commercetools integration-layer checkout-rules add --application-key <KEY> [--mode PAYMENT_ONLY|COMPLETE]
+                                                   [--country <CC,...>] [--store <KEY,...>] [--position <N>]
+commercetools integration-layer checkout-rules remove <POSITION> [--force]
+commercetools integration-layer checkout-rules set --file <PATH|-> [--force]
+```
+
+Which commercetools Checkout Application the Commerce Integration Layer names when it
+mints a Checkout Session — the Merchant Center **Checkout** tab. The rules are an
+**ordered** list: the first rule matching the shopper's country **and** store wins. A
+rule lists countries (ISO 3166-1 alpha-2) and/or store keys, each OR-matched; leave one
+out to match any, and a rule with neither matches every shopper — a catch-all, so put it
+last. `add` appends by default; `--position` places it elsewhere in the order.
+
+| Command | Effect |
+| --- | --- |
+| `get` | print the rules in match order (positions are what `remove` takes) |
+| `add` | read-modify-write: inserts one rule |
+| `remove` | read-modify-write: drops the rule at a position; confirms unless `--force` |
+| `set` | **replaces the whole list** from a JSON file (`-` for stdin); confirms unless `--force` |
+
+`set` is the form for a pipeline — keep the rules in version control:
+
+```json
+[
+  { "countries": ["DE", "AT"], "applicationKey": "eu-checkout", "mode": "COMPLETE" },
+  { "stores": ["vip-store"], "applicationKey": "vip-checkout", "mode": "PAYMENT_ONLY" },
+  { "applicationKey": "default-checkout", "mode": "PAYMENT_ONLY" }
+]
+```
+
+```bash
+commercetools integration-layer checkout-rules set --file checkout-rules.json --force
+```
+
+At least one rule must remain, so `remove` refuses to drop the last one. Without a TTY
+the confirming commands refuse unless `--force` is given. Checkout rules have their own
+route, so `project-settings set` never overwrites them.
+
 ### `allowlist`
 
 ```
