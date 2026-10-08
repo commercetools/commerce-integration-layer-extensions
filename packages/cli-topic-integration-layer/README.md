@@ -39,6 +39,10 @@ commercetools integration-layer config list|get|set|unset   # per-project extens
 
 commercetools integration-layer allowlist list|add|remove|set   # hosts the extension's fetch may reach
 
+commercetools integration-layer project-settings get|set          # project label, language, currency, country
+
+commercetools integration-layer idp-login get|set|delete          # external OpenID Connect IdP for shopper login
+
 commercetools integration-layer --version                   # the installed plugin version [offline]
 ```
 

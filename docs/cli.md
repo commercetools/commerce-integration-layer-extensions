@@ -459,6 +459,51 @@ against an edge that gives no schema away; only real operations are forwarded, a
 session bearer is attached by the CLI on the way out — never exposed to the browser
 page.
 
+### `project-settings`
+
+```
+commercetools integration-layer project-settings get [--json]
+commercetools integration-layer project-settings set [--label <TEXT>] [--language <CODE>] [--currency <CODE>] [--country <CODE>]
+```
+
+The project settings an operator edits on the Merchant Center **Project Settings** tab:
+the display label and the default language, currency and presentment country. The region
+and public endpoints are owned by the Commerce Integration Layer and aren't settable.
+
+`set` changes only the fields you pass and keeps the others at their current value, so
+a pipeline can update one setting without knowing the rest:
+
+```bash
+commercetools integration-layer project-settings set --currency EUR --country DE
+```
+
+### `idp-login`
+
+```
+commercetools integration-layer idp-login get [--json]
+commercetools integration-layer idp-login set [--issuer <URL>] [--token-endpoint <URL>] [--revocation-endpoint <URL>]
+                                              [--jwks-uri <URL>] [--authorization-endpoint <URL>]
+                                              [--client-id <ID>] [--client-secret <SECRET>] [--redirect-uri <URL>]
+                                              [--claim-external-id|-email|-first-name|-last-name|-phone <CLAIM>]
+                                              [--match-strategy externalId|email]
+commercetools integration-layer idp-login delete [--force]
+```
+
+The external OpenID Connect identity provider shoppers can sign in with — the Merchant
+Center **IdP Login** tab. The client secret is write-only: `get` only reports whether
+one is set.
+
+The first `set` needs the issuer, token, revocation and JWKS endpoints, client ID,
+redirect URI and client secret; the claim mapping defaults to `sub`, `email`,
+`given_name`, `family_name` and `phone_number`, matching by external ID. After that,
+`set` changes only the flags you pass, and leaving the secret out keeps the stored one.
+Pass the secret as the `IDP_CLIENT_SECRET` environment variable rather than a flag, so
+it stays out of the process list and shell history. `--authorization-endpoint ''`
+clears the optional authorization endpoint.
+
+`delete` disables IdP login for the project, so it prompts for confirmation; `--force`
+skips it, and without a TTY it refuses unless `--force` is given.
+
 ### `allowlist`
 
 ```

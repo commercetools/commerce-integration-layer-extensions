@@ -354,6 +354,152 @@ export async function putAllowlist(
 }
 
 /**
+ * The merchant-tunable project settings (the `project` section of `…/settings`): the
+ * display label and the default language, currency and presentment country. All four
+ * are required by the Commerce Integration Layer.
+ */
+export interface ProjectSettings {
+  label: string;
+  language: string;
+  currency: string;
+  country: string;
+}
+
+/**
+ * GET the project's settings (`GET …/settings`): the editable {@link ProjectSettings}
+ * plus the operator-owned `platform.regionId`, returned read-only. The project section
+ * can also carry a `checkout` config; that has its own route and is not modelled here.
+ */
+export async function getProjectSettings(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+): Promise<{ project: ProjectSettings; platform: { regionId: string }; version: number }> {
+  const url = `${projectUrl(baseUrl, projectKey)}/settings`;
+  const res = await authFetch(url, { headers: { accept: "application/json" } });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GET settings failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as {
+    project: ProjectSettings;
+    platform: { regionId: string };
+    version: number;
+  };
+}
+
+/**
+ * Replace the merchant-editable project settings (`PUT …/settings`). Takes all four
+ * fields — the route replaces the section, so callers wanting a partial update
+ * read-modify-write around it. Checkout rules are untouched (their own route).
+ * Returns the stored section and the config's new version.
+ */
+export async function putProjectSettings(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+  settings: ProjectSettings,
+): Promise<{ project: ProjectSettings; version: number }> {
+  const url = `${projectUrl(baseUrl, projectKey)}/settings`;
+  const res = await authFetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`PUT settings failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as { project: ProjectSettings; version: number };
+}
+
+/** Which external-IdP token claim feeds each commercetools customer field. */
+export interface IdpClaimMapping {
+  externalId: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string;
+}
+
+/**
+ * The project's external OpenID Connect identity-provider configuration as read back
+ * (`GET …/idp`). The client secret is write-only: only `hasClientSecret` is returned.
+ */
+export interface IdpConfig {
+  issuer: string;
+  tokenEndpoint: string;
+  revocationEndpoint: string;
+  jwksUri: string;
+  authorizationEndpoint?: string;
+  clientId: string;
+  redirectUri: string;
+  claims: IdpClaimMapping;
+  matchStrategy: "externalId" | "email";
+  hasClientSecret: boolean;
+}
+
+/**
+ * The IdP configuration as written (`PUT …/idp`). An empty `clientSecret` keeps the
+ * stored one; the first save must supply it.
+ */
+export interface IdpConfigInput extends Omit<IdpConfig, "hasClientSecret"> {
+  clientSecret: string;
+}
+
+/** GET the project's IdP configuration (`GET …/idp`); `null` when none is configured (404). */
+export async function getIdpConfig(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+): Promise<IdpConfig | null> {
+  const url = `${projectUrl(baseUrl, projectKey)}/idp`;
+  const res = await authFetch(url, { headers: { accept: "application/json" } });
+  if (res.status === 404) return null;
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`GET idp failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as IdpConfig;
+}
+
+/**
+ * Replace the project's IdP configuration (`PUT …/idp`). The Commerce Integration Layer
+ * validates it, seals the client secret at rest and echoes back the redacted config.
+ */
+export async function putIdpConfig(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+  config: IdpConfigInput,
+): Promise<IdpConfig> {
+  const url = `${projectUrl(baseUrl, projectKey)}/idp`;
+  const res = await authFetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`PUT idp failed (${res.status}): ${text}`);
+  }
+  return JSON.parse(text) as IdpConfig;
+}
+
+/** Remove the project's IdP configuration (`DELETE …/idp`, 204). IdP login stops working. */
+export async function deleteIdpConfig(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+): Promise<void> {
+  const url = `${projectUrl(baseUrl, projectKey)}/idp`;
+  const res = await authFetch(url, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(`DELETE idp failed (${res.status}): ${await res.text()}`);
+  }
+}
+
+/**
  * GET/PATCH `…/extension/config` return `{ entries, maskExtensionGraphQLErrors }`,
  * not a bare array. The typed `maskExtensionGraphQLErrors` flag sits beside the
  * free-form entries (the operator console owns it); this client only unwraps
