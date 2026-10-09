@@ -159,8 +159,9 @@ export async function remoteValidate(
 
 /**
  * Dry-run the bundle's API Extension declarations (`POST …/api-extensions/validate`):
- * the connector backend runs the parse the registration PUT runs and writes nothing.
- * Resolves with the parse error's text when the declarations would be refused, or
+ * the connector backend runs the parse the registration PUT runs, then has the platform
+ * judge each declaration's draft (resource types, actions, timeout ceiling); nothing is
+ * written. Resolves with the refusal's text when the declarations would be refused, or
  * null when they would register.
  */
 export async function remoteValidateApiExtensions(
@@ -176,7 +177,10 @@ export async function remoteValidateApiExtensions(
     body: JSON.stringify(declarations),
   });
   const text = await res.text();
-  if (res.status === 400) return (JSON.parse(text) as { error: string }).error;
+  if (res.status === 400) {
+    const error = (safeJson(text) as { error?: unknown } | null)?.error;
+    if (typeof error === "string") return error;
+  }
   if (!res.ok) {
     throw new Error(`API Extension validation request failed (${res.status}): ${text}`);
   }
@@ -490,4 +494,12 @@ export async function invokeDeployedApiExtension(
     throw new Error(`could not invoke the deployed extension (${res.status}): ${detail}`);
   }
   return JSON.parse(text) as DeployedInvokeResponse;
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }

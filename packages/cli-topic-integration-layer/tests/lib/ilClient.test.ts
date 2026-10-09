@@ -322,6 +322,11 @@ describe("remoteValidateApiExtensions", () => {
     expect(await remoteValidateApiExtensions(BASE, PROJECT, authFetch, declarations)).toBe("bad key");
   });
 
+  it("throws, not a SyntaxError, on a 400 without a JSON error body", async () => {
+    const authFetch = stubFetch(new Response("<html>bad gateway</html>", { status: 400 }));
+    await expect(remoteValidateApiExtensions(BASE, PROJECT, authFetch, declarations)).rejects.toThrow(/400/);
+  });
+
   it("throws on any other failure", async () => {
     const authFetch = stubFetch(new Response("boom", { status: 502 }));
     await expect(remoteValidateApiExtensions(BASE, PROJECT, authFetch, declarations)).rejects.toThrow(/502/);
