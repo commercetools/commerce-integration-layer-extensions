@@ -92,10 +92,18 @@ export default class ExtensionValidate extends IntegrationLayerCommand {
         throw err;
       }
     } else {
-      // Skipping local: still need the SDL for the remote check — load it cheaply.
-      const local = await validateBundle(outfile, sourceFiles).catch(() => null);
-      typeDefs = local?.typeDefs ?? null;
-      apiExtensions = local?.apiExtensions ?? [];
+      // Skipping local: still need the SDL and declarations for the remote check. A bundle
+      // that cannot be loaded fails here rather than reporting "nothing to check remotely".
+      try {
+        const local = await validateBundle(outfile, sourceFiles);
+        typeDefs = local.typeDefs;
+        apiExtensions = local.apiExtensions;
+      } catch (err) {
+        if (err instanceof BundleValidationError) {
+          this.error(`cannot read the bundle for the remote check: ${err.message}`);
+        }
+        throw err;
+      }
     }
 
     if (flags.skip === "remote") return;
