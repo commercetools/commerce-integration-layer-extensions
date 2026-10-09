@@ -36,6 +36,8 @@ export type ValidationResult = {
   resolverTypes: string[];
   /** The keys of the bundle's commercetools API Extensions (empty if none). */
   apiExtensionKeys: string[];
+  /** The API Extension declarations as registered — handlers stripped, they never leave the bundle. */
+  apiExtensions: Record<string, unknown>[];
 };
 
 type ExtensionModule = {
@@ -44,8 +46,6 @@ type ExtensionModule = {
   apiExtensions?: unknown;
   hooks?: unknown;
 };
-
-const API_EXTENSION_ACTIONS = new Set(['Create', 'Update']);
 
 /**
  * Does the bundle carry a capability the runtime dispatches directly, rather than
@@ -60,10 +60,13 @@ function hasDispatchOnlyCapability(mod: ExtensionModule): boolean {
 }
 
 /**
- * Validate the bundle's optional `apiExtensions` export (shape only — a handler's
- * behaviour is the author's to test). Returns the declared keys.
+ * Validate the bundle's optional `apiExtensions` export locally (shape only — a handler's
+ * behaviour is the author's to test). Returns the declarations without their handlers,
+ * which is what the connector backend's dry run takes. The handler check is the only
+ * one the backend cannot make; the rest is a fast first pass, and the backend's parse
+ * is the authority on what registers (action names stay the platform's to judge).
  */
-function validateApiExtensions(raw: unknown): string[] {
+function validateApiExtensions(raw: unknown): Record<string, unknown>[] {
   if (raw === undefined) return [];
   if (!Array.isArray(raw)) {
     throw new BundleValidationError('`apiExtensions` must be an array');
@@ -86,12 +89,9 @@ function validateApiExtensions(raw: unknown): string[] {
       throw new BundleValidationError(`apiExtensions['${key}'].resourceTypeId must be a non-empty string`);
     }
     const actions = Array.isArray(e.actions) ? e.actions : [];
-    if (
-      actions.length === 0 ||
-      !actions.every((a) => typeof a === 'string' && API_EXTENSION_ACTIONS.has(a))
-    ) {
+    if (actions.length === 0 || !actions.every((a) => typeof a === 'string' && a !== '')) {
       throw new BundleValidationError(
-        `apiExtensions['${key}'].actions must be a non-empty subset of ["Create","Update"]`,
+        `apiExtensions['${key}'].actions must be a non-empty list of action names`,
       );
     }
     if (typeof e.handler !== 'function') {
@@ -101,7 +101,7 @@ function validateApiExtensions(raw: unknown): string[] {
       throw new BundleValidationError(`apiExtensions['${key}'].condition must be a string`);
     }
   });
-  return [...keys];
+  return raw.map(({ handler: _handler, ...declaration }: Record<string, unknown>) => declaration);
 }
 
 /**
@@ -132,7 +132,8 @@ export async function validateBundle(
   }
 
   const { typeDefs, resolvers } = mod;
-  const apiExtensionKeys = validateApiExtensions(mod.apiExtensions);
+  const apiExtensions = validateApiExtensions(mod.apiExtensions);
+  const apiExtensionKeys = apiExtensions.map((e) => e.key as string);
 
   // A bundle must contribute SOMETHING: a GraphQL subgraph, API Extensions, or a
   // capability the runtime dispatches directly (hasDispatchOnlyCapability).
@@ -145,7 +146,7 @@ export async function validateBundle(
     }
     // Nothing here contributes to the schema: no SDL to check, and nothing to compose
     // remotely. The bundle is still uploaded as-is.
-    return { typeDefs: null, resolverTypes: [], apiExtensionKeys };
+    return { typeDefs: null, resolverTypes: [], apiExtensionKeys, apiExtensions };
   }
   if (resolvers === null || typeof resolvers !== "object") {
     throw new BundleValidationError("bundle with `typeDefs` must also export a `resolvers` object");
@@ -204,5 +205,5 @@ export async function validateBundle(
     }
   }
 
-  return { typeDefs, resolverTypes, apiExtensionKeys };
+  return { typeDefs, resolverTypes, apiExtensionKeys, apiExtensions };
 }

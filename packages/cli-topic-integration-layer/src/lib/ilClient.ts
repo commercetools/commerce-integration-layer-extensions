@@ -158,6 +158,36 @@ export async function remoteValidate(
 }
 
 /**
+ * Dry-run the bundle's API Extension declarations (`POST …/api-extensions/validate`):
+ * the connector backend runs the parse the registration PUT runs, then has the platform
+ * judge each declaration's draft (resource types, actions, timeout ceiling); nothing is
+ * written. Resolves with the refusal's text when the declarations would be refused, or
+ * null when they would register.
+ */
+export async function remoteValidateApiExtensions(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+  declarations: unknown[],
+): Promise<string | null> {
+  const url = `${projectUrl(baseUrl, projectKey)}/api-extensions/validate`;
+  const res = await authFetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(declarations),
+  });
+  const text = await res.text();
+  if (res.status === 400) {
+    const error = (safeJson(text) as { error?: unknown } | null)?.error;
+    if (typeof error === "string") return error;
+  }
+  if (!res.ok) {
+    throw new Error(`API Extension validation request failed (${res.status}): ${text}`);
+  }
+  return null;
+}
+
+/**
  * Upload the built bundle, replacing the project's stored one (`PUT …/extension/bundle`).
  *
  * `sourceRevision` (optional) records which of the integrator's revisions this build
@@ -464,4 +494,12 @@ export async function invokeDeployedApiExtension(
     throw new Error(`could not invoke the deployed extension (${res.status}): ${detail}`);
   }
   return JSON.parse(text) as DeployedInvokeResponse;
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
