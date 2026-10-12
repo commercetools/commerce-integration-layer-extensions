@@ -9,3 +9,6 @@ dist/
 
 # Local agent notes (not part of the published repo)
 .claude/
+
+# Generated at publish time by scripts/generate-shrinkwrap.mjs
+npm-shrinkwrap.json
