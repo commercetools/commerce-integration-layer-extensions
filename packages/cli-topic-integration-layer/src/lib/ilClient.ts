@@ -757,8 +757,9 @@ export async function invokeDeployedApiExtension(
   if (!res.ok) {
     let detail = text;
     try {
-      const parsed = JSON.parse(text) as { error?: string };
-      if (parsed.error) detail = parsed.error;
+      // An OAuth failure (401/403) carries the code in `error` and the readable text in `error_description`.
+      const parsed = JSON.parse(text) as { error?: string; error_description?: string };
+      detail = parsed.error_description ?? parsed.error ?? detail;
     } catch {
       // Non-JSON body — surface it raw.
     }
