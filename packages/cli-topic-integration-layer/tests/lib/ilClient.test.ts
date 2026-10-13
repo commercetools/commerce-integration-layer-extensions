@@ -7,6 +7,7 @@ import {
   patchConfig,
   invokeDeployedApiExtension,
   fetchBundleSource,
+  pushBundle,
   type AuthFetch,
 } from "../../src/lib/ilClient.js";
 
@@ -210,8 +211,8 @@ describe("fetchBundleSource", () => {
         headers: {
           "Content-Disposition":
             "attachment; filename=\"extension.cjs\"; filename*=UTF-8''extension.cjs",
-          "X-Extension-Version": "7",
-          "X-Extension-Source-Revision": "r48211",
+          "CT-Extension-Version": "7",
+          "CT-Extension-Source-Revision": "r48211",
         },
       }),
     );
@@ -301,5 +302,31 @@ describe("invokeDeployedApiExtension", () => {
     await expect(invokeDeployedApiExtension(BASE, PROJECT, authFetch, INPUT)).rejects.toThrow(
       /404.*No extensions-sandbox deployment/,
     );
+  });
+});
+
+describe("pushBundle", () => {
+  it("sends the filename and source revision as CT- headers", async () => {
+    const authFetch = stubFetch(new Response(JSON.stringify({ version: 1 }), { status: 200 }));
+
+    await pushBundle(BASE, PROJECT, authFetch, "module.exports = {}", "my ext.cjs", "r1 2");
+
+    const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe(`${BASE}/${PROJECT}/main/extension/bundle`);
+    expect(init?.method).toBe("PUT");
+    expect(init?.headers).toMatchObject({
+      "ct-extension-filename": "my%20ext.cjs",
+      "ct-extension-source-revision": "r1%202",
+    });
+    expect(Object.keys(init?.headers ?? {}).some((k) => k.startsWith("x-"))).toBe(false);
+  });
+
+  it("omits the source revision header when there is none", async () => {
+    const authFetch = stubFetch(new Response(JSON.stringify({ version: 1 }), { status: 200 }));
+
+    await pushBundle(BASE, PROJECT, authFetch, "module.exports = {}", "e.cjs");
+
+    const [, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(init?.headers).not.toHaveProperty("ct-extension-source-revision");
   });
 });
