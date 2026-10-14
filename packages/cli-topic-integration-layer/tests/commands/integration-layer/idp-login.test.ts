@@ -212,6 +212,21 @@ describe("integration-layer idp-login set", () => {
     expect(body.issuer).toBe(STORED.issuer);
   });
 
+  it("rejects an update that passes nothing, without calling the API", async () => {
+    const f = idpFetch(STORED);
+    const { error } = await runCommand(IdpLoginSet, [], asFetch(f));
+    expect(error?.message).toMatch(/Nothing to change/);
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("counts IDP_CLIENT_SECRET as a change", async () => {
+    process.env.IDP_CLIENT_SECRET = "rotated";
+    const f = idpFetch(STORED);
+    const { error } = await runCommand(IdpLoginSet, [], asFetch(f));
+    expect(error).toBeUndefined();
+    expect(JSON.parse(String(putOf(f)![1]?.body)).clientSecret).toBe("rotated");
+  });
+
   it("reads the client secret from IDP_CLIENT_SECRET", async () => {
     process.env.IDP_CLIENT_SECRET = "from-env";
     const f = idpFetch(STORED);

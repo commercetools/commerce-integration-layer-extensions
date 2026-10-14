@@ -1,5 +1,5 @@
 import { Flags } from "@oclif/core";
-import { buildRule, CHECKOUT_MODES, logRules } from "../../../lib/checkoutRules.js";
+import { buildRule, CHECKOUT_MODES, isCatchAll, logRules } from "../../../lib/checkoutRules.js";
 import { getCheckoutConfig, putCheckoutConfig } from "../../../lib/ilClient.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
 
@@ -60,9 +60,6 @@ export default class CheckoutRulesAdd extends IntegrationLayerCommand {
     if (flags.position !== undefined && flags.position > rules.length + 1) {
       this.error(`--position ${flags.position} is out of range (${rules.length} rule(s) exist).`);
     }
-    // A rule without countries and stores matches everyone, so it shadows whatever follows it.
-    const isCatchAll = (r: { countries?: string[]; stores?: string[] }) =>
-      !r.countries?.length && !r.stores?.length;
     const catchAllAt = rules.findIndex(isCatchAll);
     let index = flags.position !== undefined ? flags.position - 1 : rules.length;
     if (isCatchAll(rule)) {

@@ -64,6 +64,10 @@ export default class IdpLoginSet extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(IdpLoginSet);
+    // `flags` includes IDP_CLIENT_SECRET (oclif resolves the env var into the flag).
+    if (Object.values(flags).every((v) => v === undefined)) {
+      this.error("Nothing to change — pass at least one option (or set IDP_CLIENT_SECRET).");
+    }
     const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
 
     // Trim; a blank value is only meaningful for the optional authorization endpoint.

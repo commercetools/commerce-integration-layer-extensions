@@ -52,6 +52,11 @@ export function buildRule(input: {
   return rule;
 }
 
+/** A rule without countries and stores matches every shopper. */
+export function isCatchAll(rule: { countries?: string[]; stores?: string[] }): boolean {
+  return !rule.countries?.length && !rule.stores?.length;
+}
+
 /**
  * Parse a rules document: either a bare array of rules or `{ "rules": [...] }`. Each
  * rule has `applicationKey`, `mode` and optional `countries` / `stores` string arrays.
@@ -68,7 +73,7 @@ export function parseRules(json: string): CheckoutRule[] {
     throw new Error('Expected a JSON array of rules, or an object like { "rules": [...] }.');
   }
   if (list.length === 0) throw new Error("At least one rule is required.");
-  return list.map((raw, i) => {
+  const rules = list.map((raw, i) => {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
       throw new Error(`Rule ${i + 1}: expected an object.`);
     }
@@ -90,6 +95,15 @@ export function parseRules(json: string): CheckoutRule[] {
       throw new Error(`Rule ${i + 1}: ${(e as Error).message}`);
     }
   });
+  // First match wins, so a catch-all shadows everything after it.
+  const catchAllAt = rules.findIndex(isCatchAll);
+  if (catchAllAt !== -1 && catchAllAt !== rules.length - 1) {
+    throw new Error(
+      `Rule ${catchAllAt + 1} has no countries and no stores, so it matches every shopper; ` +
+        `it must be the last rule or the ones after it can never match.`,
+    );
+  }
+  return rules;
 }
 
 /** One-line summary of a rule, numbered from 1 in match order. */

@@ -86,6 +86,14 @@ describe("parseRules", () => {
     expect(parseRules(JSON.stringify({ rules: doc }))).toEqual(expected);
   });
 
+  it("accepts a catch-all as the last rule only", () => {
+    const scoped = { countries: ["DE"], applicationKey: "a", mode: "COMPLETE" };
+    const all = { applicationKey: "b", mode: "COMPLETE" };
+    expect(parseRules(JSON.stringify([scoped, all]))).toHaveLength(2);
+    expect(() => parseRules(JSON.stringify([all, scoped]))).toThrow(/Rule 1 .*must be the last rule/);
+    expect(() => parseRules(JSON.stringify([all, all]))).toThrow(/Rule 1 .*must be the last rule/);
+  });
+
   it.each([
     ["not json", /not valid JSON/],
     ["[]", /At least one rule/],
