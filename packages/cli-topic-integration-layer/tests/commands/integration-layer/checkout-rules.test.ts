@@ -86,6 +86,14 @@ describe("parseRules", () => {
     expect(parseRules(JSON.stringify({ rules: doc }))).toEqual(expected);
   });
 
+  it("rejects blank country and store entries instead of broadening to a catch-all", () => {
+    const rule = (extra: object) => JSON.stringify([{ applicationKey: "a", mode: "COMPLETE", ...extra }]);
+    expect(() => parseRules(rule({ countries: [" "] }))).toThrow(/Rule 1: A blank country/);
+    expect(() => parseRules(rule({ countries: ["DE,"] }))).toThrow(/blank country/);
+    expect(() => parseRules(rule({ stores: [""] }))).toThrow(/blank store key/);
+    expect(parseRules(rule({ countries: [] }))).toEqual([{ applicationKey: "a", mode: "COMPLETE" }]);
+  });
+
   it("accepts a catch-all as the last rule only", () => {
     const scoped = { countries: ["DE"], applicationKey: "a", mode: "COMPLETE" };
     const all = { applicationKey: "b", mode: "COMPLETE" };
@@ -216,6 +224,13 @@ describe("integration-layer checkout-rules add", () => {
     expect(notLast.error?.message).toMatch(/must be last/);
     expect(putOf(dup)).toBeUndefined();
     expect(putOf(early)).toBeUndefined();
+  });
+
+  it("rejects a blank --country rather than adding a catch-all", async () => {
+    const f = checkoutFetch(RULES.slice(0, 2));
+    const { error } = await runCommand(CheckoutRulesAdd, ["--application-key", "x", "--country", ""], asFetch(f));
+    expect(error?.message).toMatch(/blank country/);
+    expect(putOf(f)).toBeUndefined();
   });
 
   it("accepts both modes", async () => {

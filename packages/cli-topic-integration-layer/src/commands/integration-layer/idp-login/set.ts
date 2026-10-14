@@ -64,8 +64,10 @@ export default class IdpLoginSet extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { flags } = await this.parse(IdpLoginSet);
-    // `flags` includes IDP_CLIENT_SECRET (oclif resolves the env var into the flag).
-    if (Object.values(flags).every((v) => v === undefined)) {
+    // Only the IdP's own options count — `flags` also carries the inherited ones
+    // (--project-key, --env-file, …). IDP_CLIENT_SECRET arrives as `client-secret`.
+    const IDP_FLAGS = Object.keys(IdpLoginSet.flags);
+    if (IDP_FLAGS.every((name) => (flags as Record<string, unknown>)[name] === undefined)) {
       this.error("Nothing to change — pass at least one option (or set IDP_CLIENT_SECRET).");
     }
     const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);

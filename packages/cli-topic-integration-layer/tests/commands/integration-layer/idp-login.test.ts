@@ -219,6 +219,13 @@ describe("integration-layer idp-login set", () => {
     expect(f).not.toHaveBeenCalled();
   });
 
+  it("does not count inherited flags such as --project-key as a change", async () => {
+    const f = idpFetch(STORED);
+    const { error } = await runCommand(IdpLoginSet, ["--project-key", "other"], asFetch(f));
+    expect(error?.message).toMatch(/Nothing to change/);
+    expect(putOf(f)).toBeUndefined();
+  });
+
   it("counts IDP_CLIENT_SECRET as a change", async () => {
     process.env.IDP_CLIENT_SECRET = "rotated";
     const f = idpFetch(STORED);

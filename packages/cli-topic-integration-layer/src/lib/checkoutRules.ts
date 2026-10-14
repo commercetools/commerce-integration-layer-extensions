@@ -7,14 +7,16 @@ const STORE_KEY = /^[A-Za-z0-9_-]+$/;
 
 /**
  * Split values that may be repeated and/or comma-separated into a trimmed, de-duplicated
- * list, dropping blanks. Countries are upper-cased (case-insensitive input); store keys
+ * list. A blank element (`--country ""`, `"DE,"`, `[" "]`) is an error, not "any": dropping
+ * it would turn a mistyped scope into a rule that matches every shopper. Countries are upper-cased (case-insensitive input); store keys
  * are kept verbatim — commercetools keys are case-sensitive.
  */
-export function splitList(values: readonly string[], upper: boolean): string[] {
+export function splitList(values: readonly string[], upper: boolean, what: string): string[] {
   const seen = new Set<string>();
   for (const raw of values.flatMap((v) => v.split(","))) {
     const value = upper ? raw.trim().toUpperCase() : raw.trim();
-    if (value) seen.add(value);
+    if (!value) throw new Error(`A blank ${what} is not allowed — omit it to match any.`);
+    seen.add(value);
   }
   return [...seen];
 }
@@ -37,12 +39,12 @@ export function buildRule(input: {
   if (!CHECKOUT_MODES.includes(input.mode as CheckoutMode)) {
     throw new Error(`Invalid mode '${String(input.mode)}' (use ${CHECKOUT_MODES.join(" or ")}).`);
   }
-  const countries = splitList(input.countries ?? [], true);
+  const countries = splitList(input.countries ?? [], true, "country");
   const badCountry = countries.find((c) => !COUNTRY.test(c));
   if (badCountry) {
     throw new Error(`'${badCountry}' is not a valid country (use ISO 3166-1 alpha-2, e.g. DE).`);
   }
-  const stores = splitList(input.stores ?? [], false);
+  const stores = splitList(input.stores ?? [], false, "store key");
   const badStore = stores.find((s) => !STORE_KEY.test(s));
   if (badStore) throw new Error(`'${badStore}' is not a valid store key.`);
 
