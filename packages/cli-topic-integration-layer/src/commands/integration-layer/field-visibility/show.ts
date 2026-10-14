@@ -41,6 +41,7 @@ export default class FieldVisibilityShow extends IntegrationLayerCommand {
     const names = [...new Set((argv as string[]).map((f) => f.trim()).filter((f) => f !== ""))];
     if (names.length === 0) this.error("At least one field name is required.");
     const typeKey = flags["type-key"].trim();
+    if (!typeKey) this.error("--type-key must not be empty.");
 
     const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
     const { fields } = await getFieldVisibility(baseUrl, projectKey, authFetch);

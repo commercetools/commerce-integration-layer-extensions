@@ -105,7 +105,7 @@ export default class IdpLoginSet extends IntegrationLayerCommand {
     // are not plain http(s) URLs, but only at save time — check them first.
     for (const name of ["token-endpoint", "revocation-endpoint", "jwks-uri"] as const) {
       if (!isHttpUrlWithoutCredentials(have[name]!)) {
-        this.error(`--${name} must be an absolute http(s) URL without credentials (got '${have[name]}').`);
+        this.error(`--${name} must be an absolute http(s) URL without credentials.`);
       }
     }
 
