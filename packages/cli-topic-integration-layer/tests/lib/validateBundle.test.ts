@@ -76,4 +76,16 @@ describe("validateBundle contribution check", () => {
       BundleValidationError,
     );
   });
+
+  it("accepts any non-empty action name and strips handlers from the declarations", async () => {
+    const result = await validate(
+      "any-action",
+      `module.exports.apiExtensions = [
+         { key: "cart-check", resourceTypeId: "cart", actions: ["Delete"], handler: () => ({}) },
+       ];`,
+    );
+    expect(result.apiExtensions).toEqual([
+      { key: "cart-check", resourceTypeId: "cart", actions: ["Delete"] },
+    ]);
+  });
 });

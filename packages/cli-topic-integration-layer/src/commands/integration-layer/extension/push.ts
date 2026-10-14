@@ -4,7 +4,7 @@ import { Args, Flags } from "@oclif/core";
 import { defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
 import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 import { validateBundle, BundleValidationError } from "../../../lib/tooling/validateBundle.js";
-import { pushBundle, remoteValidate, type RemoteValidationResult } from "../../../lib/ilClient.js";
+import { pushBundle, remoteValidate, remoteValidateApiExtensions, type RemoteValidationResult } from "../../../lib/ilClient.js";
 import { awaitBundleState, type BundleOutcome } from "../../../lib/awaitBundleState.js";
 import { resolveSourceRevision } from "../../../lib/sourceRevision.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
@@ -200,9 +200,11 @@ export default class ExtensionPush extends IntegrationLayerCommand {
       }
     }
     let typeDefs: string | null;
+    let apiExtensions: Record<string, unknown>[];
     try {
       const local = await validateBundle(outfile, sourceFiles);
       typeDefs = local.typeDefs;
+      apiExtensions = local.apiExtensions;
       this.log(
         `✓ validated bundle (resolver roots: ${local.resolverTypes.join(", ") || "none"}; ` +
           `API extensions: ${local.apiExtensionKeys.join(", ") || "none"})`,
@@ -216,16 +218,26 @@ export default class ExtensionPush extends IntegrationLayerCommand {
 
     // Remote check composes the GraphQL subgraph WITH the Commerce Integration Layer + checks
     // for breaking changes. Only applies when the bundle has a subgraph — an
-    // API-extensions-only bundle has no SDL, so skip straight to the upload.
+    // API-extensions-only bundle has no SDL, so it skips this half.
+    let valid = true;
     if (typeDefs !== null) {
       const remote = await remoteValidate(baseUrl, projectKey, authFetch, typeDefs);
-      const valid = this.reportRemote(remote);
-      if (!valid) {
-        if (!flags.force) {
-          this.error("Aborting push. Re-run with --force to override the remote validation.");
-        }
-        this.logToStderr("⚠ forcing push despite failing validation (--force).");
+      valid = this.reportRemote(remote);
+    }
+    // The platform judges the API Extension declarations (actions, resource types, timeout
+    // ceiling), so a push that skipped this would store a bundle whose registration is refused.
+    if (apiExtensions.length > 0) {
+      const refusal = await remoteValidateApiExtensions(baseUrl, projectKey, authFetch, apiExtensions);
+      if (refusal !== null) {
+        this.logToStderr(`✗ API Extension declarations would be refused: ${refusal}`);
+        valid = false;
       }
+    }
+    if (!valid) {
+      if (!flags.force) {
+        this.error("Aborting push. Re-run with --force to override the remote validation.");
+      }
+      this.logToStderr("⚠ forcing push despite failing validation (--force).");
     }
 
     const bundle = await readFile(outfile, "utf8");

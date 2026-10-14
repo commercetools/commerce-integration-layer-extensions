@@ -2,7 +2,7 @@ import { Flags } from "@oclif/core";
 import { defaultEntry, defaultOutfile } from "../../../lib/tooling/build.js";
 import { bundleForFlags } from "../../../lib/tooling/extensions.js";
 import { validateBundle, BundleValidationError } from "../../../lib/tooling/validateBundle.js";
-import { remoteValidate, type RemoteValidationResult } from "../../../lib/ilClient.js";
+import { remoteValidate, remoteValidateApiExtensions, type RemoteValidationResult } from "../../../lib/ilClient.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
 
 export default class ExtensionValidate extends IntegrationLayerCommand {
@@ -77,10 +77,12 @@ export default class ExtensionValidate extends IntegrationLayerCommand {
     }
 
     let typeDefs: string | null = null;
+    let apiExtensions: Record<string, unknown>[] = [];
     if (flags.skip !== "local") {
       try {
         const local = await validateBundle(outfile, sourceFiles);
         typeDefs = local.typeDefs;
+        apiExtensions = local.apiExtensions;
         this.log(
           `✓ local checks passed (resolver roots: ${local.resolverTypes.join(", ") || "none"}; ` +
             `API extensions: ${local.apiExtensionKeys.join(", ") || "none"})`,
@@ -90,19 +92,40 @@ export default class ExtensionValidate extends IntegrationLayerCommand {
         throw err;
       }
     } else {
-      // Skipping local: still need the SDL for the remote check — load it cheaply.
-      const local = await validateBundle(outfile, sourceFiles).catch(() => null);
-      typeDefs = local?.typeDefs ?? null;
+      // Skipping local: still need the SDL and declarations for the remote check. A bundle
+      // that cannot be loaded fails here rather than reporting "nothing to check remotely".
+      try {
+        const local = await validateBundle(outfile, sourceFiles);
+        typeDefs = local.typeDefs;
+        apiExtensions = local.apiExtensions;
+      } catch (err) {
+        if (err instanceof BundleValidationError) {
+          this.error(`cannot read the bundle for the remote check: ${err.message}`);
+        }
+        throw err;
+      }
     }
 
     if (flags.skip === "remote") return;
-    if (typeDefs === null) {
-      this.log("· no GraphQL subgraph in this bundle — nothing to compose remotely.");
+    if (typeDefs === null && apiExtensions.length === 0) {
+      this.log("· no GraphQL subgraph or API Extensions in this bundle — nothing to check remotely.");
       return;
     }
 
     const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
-    const result = await remoteValidate(baseUrl, projectKey, authFetch, typeDefs);
-    if (!this.reportRemote(result)) this.error("remote validation failed.");
+    let failed = false;
+    if (typeDefs !== null) {
+      const result = await remoteValidate(baseUrl, projectKey, authFetch, typeDefs);
+      failed = !this.reportRemote(result);
+    }
+    if (apiExtensions.length > 0) {
+      const error = await remoteValidateApiExtensions(baseUrl, projectKey, authFetch, apiExtensions);
+      if (error === null) this.log("✓ API Extension declarations would register");
+      else {
+        this.logToStderr(`✗ API Extension declarations would be refused: ${error}`);
+        failed = true;
+      }
+    }
+    if (failed) this.error("remote validation failed.");
   }
 }
