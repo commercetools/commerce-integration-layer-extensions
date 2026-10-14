@@ -94,6 +94,12 @@ describe("parseRules", () => {
     expect(parseRules(rule({ countries: [] }))).toEqual([{ applicationKey: "a", mode: "COMPLETE" }]);
   });
 
+  it("rejects unknown properties instead of dropping the scope", () => {
+    const rule = (extra: object) => JSON.stringify([{ applicationKey: "a", mode: "COMPLETE", ...extra }]);
+    expect(() => parseRules(rule({ country: ["DE"] }))).toThrow(/Rule 1: unknown property 'country'/);
+    expect(() => parseRules(rule({ store: ["x"], foo: 1 }))).toThrow(/unknown properties 'store', 'foo'/);
+  });
+
   it("accepts a catch-all as the last rule only", () => {
     const scoped = { countries: ["DE"], applicationKey: "a", mode: "COMPLETE" };
     const all = { applicationKey: "b", mode: "COMPLETE" };

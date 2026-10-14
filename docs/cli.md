@@ -602,7 +602,8 @@ Every save republishes the schema, and the command waits for the outcome: it pri
 `The schema was republished.` on success. If the rules were stored but the republish failed,
 the published schema doesn't reflect them yet — a hidden field is still public — so the
 command exits with code **2** and says so. Use “Refresh schema” on the Merchant Center
-Schema tab to republish — re-running the command won't, as it finds the rules already stored.
+Schema tab to republish. Re-running `hide` or `show` won't, as it finds the rules already stored;
+`set` always saves again, so re-running it retries the republish.
 
 ### `allowlist`
 

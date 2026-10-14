@@ -4,7 +4,7 @@ import { confirm } from "../../../lib/confirmPrompt.js";
 import {
   logCoordinates,
   parseCoordinates,
-  PUBLISH_PENDING,
+  PUBLISH_PENDING_SET,
   REPUBLISHED,
   storedRules,
 } from "../../../lib/fieldVisibility.js";
@@ -70,7 +70,7 @@ export default class FieldVisibilitySet extends IntegrationLayerCommand {
     this.log(`✓ set ${saved.hiddenFields.length} hidden field(s) for '${projectKey}' (version ${saved.version}).`);
     // The route republishes the schema on every save; a failed republish leaves the rules
     // stored but not yet public, which a pipeline must see as a failure.
-    if (saved.publishPending) this.error(PUBLISH_PENDING, { exit: 2 });
+    if (saved.publishPending) this.error(PUBLISH_PENDING_SET, { exit: 2 });
     this.log(REPUBLISHED);
   }
 }

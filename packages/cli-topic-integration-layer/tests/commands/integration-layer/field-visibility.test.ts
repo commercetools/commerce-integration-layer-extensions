@@ -204,6 +204,7 @@ describe("integration-layer field-visibility hide", () => {
     expect(putOf(f)).toBeDefined();
     expect(out).toContain("hid 1 field(s)");
     expect(error?.message).toMatch(/republishing the schema failed/);
+    expect(error?.message).not.toMatch(/Re-running/);
     expect((error as { oclif?: { exit?: number } }).oclif?.exit).toBe(2);
   });
 });
@@ -274,6 +275,7 @@ describe("integration-layer field-visibility set", () => {
     expect(ok.out).toContain("The schema was republished.");
     const pending = await runCommand(FieldVisibilitySet, ["--file", file("[]"), "--force"], asFetch(visibilityFetch(true)));
     expect(pending.error?.message).toMatch(/republishing the schema failed/);
+    expect(pending.error?.message).toMatch(/Re-running this command also retries it/);
   });
 
   it("rejects a malformed file without calling the API", async () => {

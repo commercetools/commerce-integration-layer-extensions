@@ -54,6 +54,8 @@ export function buildRule(input: {
   return rule;
 }
 
+const RULE_KEYS = ["applicationKey", "mode", "countries", "stores"];
+
 /** A rule without countries and stores matches every shopper. */
 export function isCatchAll(rule: { countries?: string[]; stores?: string[] }): boolean {
   return !rule.countries?.length && !rule.stores?.length;
@@ -80,6 +82,14 @@ export function parseRules(json: string): CheckoutRule[] {
       throw new Error(`Rule ${i + 1}: expected an object.`);
     }
     const r = raw as Record<string, unknown>;
+    // A typo (`country` for `countries`) would otherwise drop the scope and make a catch-all.
+    const unknown = Object.keys(r).filter((k) => !RULE_KEYS.includes(k));
+    if (unknown.length > 0) {
+      throw new Error(
+        `Rule ${i + 1}: unknown ${unknown.length > 1 ? "properties" : "property"} ` +
+          `${unknown.map((k) => `'${k}'`).join(", ")} (allowed: ${RULE_KEYS.join(", ")}).`,
+      );
+    }
     for (const axis of ["countries", "stores"] as const) {
       const v = r[axis];
       if (v !== undefined && !(Array.isArray(v) && v.every((x) => typeof x === "string"))) {
