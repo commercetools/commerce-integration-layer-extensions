@@ -530,7 +530,8 @@ mints a Checkout Session — the Merchant Center **Checkout** tab. The rules are
 **ordered** list: the first rule matching the shopper's country **and** store wins. A
 rule lists countries (ISO 3166-1 alpha-2) and/or store keys, each OR-matched; leave one
 out to match any, and a rule with neither matches every shopper — a catch-all, so put it
-last. `add` appends by default; `--position` places it elsewhere in the order.
+last. `add` appends by default (before an existing catch-all, which stays last); `--position` places
+it elsewhere in the order, but never after a catch-all, and a catch-all can only go last.
 
 | Command | Effect |
 | --- | --- |
@@ -600,8 +601,8 @@ not in force until the field appears.
 Every save republishes the schema, and the command waits for the outcome: it prints
 `The schema was republished.` on success. If the rules were stored but the republish failed,
 the published schema doesn't reflect them yet — a hidden field is still public — so the
-command exits with code **2** and says so. Re-run it, or use “Refresh schema” on the
-Merchant Center Schema tab.
+command exits with code **2** and says so. Use “Refresh schema” on the Merchant Center
+Schema tab to republish — re-running the command won't, as it finds the rules already stored.
 
 ### `allowlist`
 

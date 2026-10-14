@@ -93,4 +93,4 @@ export const REPUBLISHED = "The schema was republished.";
 
 /** The save was stored but the republish failed, so the published schema is behind the rules. */
 export const PUBLISH_PENDING =
-  "The rules are saved, but republishing the schema failed — the published schema does not reflect them yet. Use “Refresh schema” on the Schema tab in the Merchant Center, or re-run this command.";
+  "The rules are saved, but republishing the schema failed — the published schema does not reflect them yet. Use “Refresh schema” on the Schema tab in the Merchant Center to republish it.";

@@ -31,7 +31,7 @@ export default class IdpLoginSet extends IntegrationLayerCommand {
     "Create or update the project's external OpenID Connect identity provider (IdP login); on an existing configuration only the fields you pass change";
 
   static override examples = [
-    "<%= config.bin %> integration-layer idp-login set --issuer https://idp.example.com --token-endpoint https://idp.example.com/token --revocation-endpoint https://idp.example.com/revoke --jwks-uri https://idp.example.com/jwks --client-id abc --client-secret s3cret --redirect-uri https://shop.example.com/callback",
+    "IDP_CLIENT_SECRET=s3cret <%= config.bin %> integration-layer idp-login set --issuer https://idp.example.com --token-endpoint https://idp.example.com/token --revocation-endpoint https://idp.example.com/revoke --jwks-uri https://idp.example.com/jwks --client-id abc --redirect-uri https://shop.example.com/callback",
     "<%= config.bin %> integration-layer idp-login set --match-strategy email",
     "IDP_CLIENT_SECRET=s3cret <%= config.bin %> integration-layer idp-login set --client-id new-id",
   ];

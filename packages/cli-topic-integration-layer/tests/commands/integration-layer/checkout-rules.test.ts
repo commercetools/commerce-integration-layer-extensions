@@ -161,8 +161,8 @@ describe("integration-layer checkout-rules set", () => {
 });
 
 describe("integration-layer checkout-rules add", () => {
-  it("appends a rule by default", async () => {
-    const f = checkoutFetch(RULES);
+  it("appends a scoped rule by default when there is no catch-all", async () => {
+    const f = checkoutFetch(RULES.slice(0, 2));
     const { error } = await runCommand(
       CheckoutRulesAdd,
       ["--application-key", "new", "--country", "fr,es", "--store", "a", "--store", "b", "--mode", "COMPLETE"],
@@ -170,13 +170,44 @@ describe("integration-layer checkout-rules add", () => {
     );
     expect(error).toBeUndefined();
     const rules = putRules(f);
-    expect(rules).toHaveLength(4);
-    expect(rules[3]).toEqual({
+    expect(rules).toHaveLength(3);
+    expect(rules[2]).toEqual({
       countries: ["FR", "ES"],
       stores: ["a", "b"],
       applicationKey: "new",
       mode: "COMPLETE",
     });
+  });
+
+  it("puts a scoped rule before an existing catch-all by default", async () => {
+    const f = checkoutFetch(RULES);
+    const { error } = await runCommand(CheckoutRulesAdd, ["--application-key", "new", "--country", "FR"], asFetch(f));
+    expect(error).toBeUndefined();
+    expect(putRules(f).map((r: { applicationKey: string }) => r.applicationKey)).toEqual([
+      "eu-app", "vip-app", "new", "default-app",
+    ]);
+  });
+
+  it("rejects a scoped rule positioned after the catch-all", async () => {
+    const f = checkoutFetch(RULES);
+    const { error } = await runCommand(
+      CheckoutRulesAdd,
+      ["--application-key", "new", "--country", "FR", "--position", "4"],
+      asFetch(f),
+    );
+    expect(error?.message).toMatch(/unreachable/);
+    expect(putOf(f)).toBeUndefined();
+  });
+
+  it("rejects a second catch-all, and a catch-all that is not last", async () => {
+    const dup = checkoutFetch(RULES);
+    const second = await runCommand(CheckoutRulesAdd, ["--application-key", "x"], asFetch(dup));
+    expect(second.error?.message).toMatch(/catch-all rule already exists/);
+    const early = checkoutFetch(RULES.slice(0, 2));
+    const notLast = await runCommand(CheckoutRulesAdd, ["--application-key", "x", "--position", "1"], asFetch(early));
+    expect(notLast.error?.message).toMatch(/must be last/);
+    expect(putOf(dup)).toBeUndefined();
+    expect(putOf(early)).toBeUndefined();
   });
 
   it("accepts both modes", async () => {
@@ -202,7 +233,7 @@ describe("integration-layer checkout-rules add", () => {
 
   it("inserts at --position", async () => {
     const f = checkoutFetch(RULES);
-    await runCommand(CheckoutRulesAdd, ["--application-key", "top", "--position", "1"], asFetch(f));
+    await runCommand(CheckoutRulesAdd, ["--application-key", "top", "--country", "FR", "--position", "1"], asFetch(f));
     expect(putRules(f).map((r: { applicationKey: string }) => r.applicationKey)).toEqual([
       "top", "eu-app", "vip-app", "default-app",
     ]);
