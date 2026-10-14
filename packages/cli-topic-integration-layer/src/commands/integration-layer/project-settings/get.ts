@@ -21,7 +21,9 @@ export default class SettingsGet extends IntegrationLayerCommand {
     const { project, platform } = await getProjectSettings(baseUrl, projectKey, authFetch);
 
     if (flags.json) {
-      this.log(JSON.stringify(project, null, 2));
+      // Only the four settings — `project` may also carry the checkout rules.
+      const { label, language, currency, country } = project;
+      this.log(JSON.stringify({ label, language, currency, country }, null, 2));
       return;
     }
     this.log(`Settings for '${projectKey}':`);
