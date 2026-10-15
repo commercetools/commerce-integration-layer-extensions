@@ -1,5 +1,11 @@
 # @commercetools/cli-topic-integration-layer
 
+## 1.3.1
+
+### Patch Changes
+
+- 69894ee: `init` now scaffolds a README that installs `@commercetools/cli` (no `@dev`) and links to the public Commerce Integration Layer docs.
+
 ## 1.3.0
 
 ### Minor Changes
