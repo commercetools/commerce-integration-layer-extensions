@@ -62,7 +62,7 @@ describe("integration-layer init", () => {
     expect(test).toContain("GREETING");
 
     const readme = await readFile(join(dir, "README.md"), "utf8");
-    expect(readme).toContain("pnpm add -g @commercetools/cli@dev");
+    expect(readme).toContain("pnpm add -g @commercetools/cli");
     expect(readme).toContain("commercetools plugins install @commercetools/cli-topic-integration-layer");
     expect(readme).toContain("commercetools auth login");
     expect(readme).toContain("pnpm test");

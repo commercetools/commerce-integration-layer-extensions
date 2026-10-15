@@ -26,13 +26,10 @@ runtime oclif plugin. It is never bundled into the base CLI, so no auth or scope
 mapping is needed.
 
 ```bash
-npm install -g @commercetools/cli@dev
+npm install -g @commercetools/cli
 commercetools plugins install @commercetools/cli-topic-integration-layer
 commercetools auth login --project-key <your-project-key>
 ```
-
-> **Why `@dev`.** The `plugins` command (`@oclif/plugin-plugins`) currently ships only
-> in the CLI's dev prerelease; `@latest` predates it. Drop `@dev` once it is promoted.
 
 To run an unreleased build from a checkout of this repo instead, `pnpm setup:cli`
 builds the vendored plugin and `commercetools plugins link`s it. That **replaces** the

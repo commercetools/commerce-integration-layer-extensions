@@ -115,9 +115,7 @@ they always ship as one.
 
 \`\`\`sh
 # The scripts below run through the commercetools CLI's integration-layer topic.
-# (Install from @dev for now — the \`plugins\` command is only in the CLI's dev
-# prerelease; drop @dev once it ships to @latest.)
-pnpm add -g @commercetools/cli@dev
+pnpm add -g @commercetools/cli
 commercetools plugins install @commercetools/cli-topic-integration-layer
 
 # Log in once — mints the manage_project token the authenticated commands reuse
@@ -157,7 +155,7 @@ Optionally copy \`.env.example\` to \`.env\` to override the Commerce Integratio
 
 ## Documentation
 
-- [Commerce Integration Layer documentation](https://docs.commercetools.com/integration-layer) —
+- [Commerce Integration Layer documentation](https://docs.commercetools.com/commerce-integration-layer) —
   the authoring model: federation concepts, schema patterns, the entity catalog, the
   sandbox, configuration, and publishing.
 - [Extension authoring details](https://github.com/commercetools/commerce-integration-layer-extensions/blob/main/docs/authoring.md)
