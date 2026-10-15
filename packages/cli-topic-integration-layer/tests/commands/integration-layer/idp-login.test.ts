@@ -253,6 +253,8 @@ describe("integration-layer idp-login set", () => {
     ["--token-endpoint", "idp.example.com/token"],
     ["--revocation-endpoint", "ftp://idp.example.com/revoke"],
     ["--jwks-uri", "https://user:pw@idp.example.com/jwks"],
+    ["--authorization-endpoint", "idp.example.com/auth"],
+    ["--redirect-uri", "javascript:alert(1)"],
   ])("rejects %s that is not an absolute http(s) URL without credentials", async (flag, value) => {
     const f = idpFetch(STORED);
     const { error } = await runCommand(IdpLoginSet, [flag, value], asFetch(f));

@@ -115,15 +115,26 @@ export default class IdpLoginSet extends IntegrationLayerCommand {
       }
     }
 
+    // The two URLs the shopper's browser is sent to: not fetched by the Commerce Integration
+    // Layer, but a malformed one breaks login just the same. The authorization endpoint is
+    // optional, and empty clears it.
+    const authorizationEndpoint =
+      given("authorization-endpoint") ?? current?.authorizationEndpoint;
+    for (const [name, value] of [
+      ["authorization-endpoint", authorizationEndpoint],
+      ["redirect-uri", have["redirect-uri"]],
+    ] as const) {
+      if (value && !isHttpUrlWithoutCredentials(value)) {
+        this.error(`--${name} must be an absolute http(s) URL without credentials.`);
+      }
+    }
+
     const claims: IdpClaimMapping = { ...(current?.claims ?? DEFAULT_CLAIMS) };
     claims.externalId = given("claim-external-id") ?? claims.externalId;
     claims.email = given("claim-email") ?? claims.email;
     claims.firstName = given("claim-first-name") ?? claims.firstName;
     claims.lastName = given("claim-last-name") ?? claims.lastName;
     claims.phone = given("claim-phone") ?? claims.phone;
-
-    const authorizationEndpoint =
-      given("authorization-endpoint") ?? current?.authorizationEndpoint;
 
     const input: IdpConfigInput = {
       issuer: have.issuer!,

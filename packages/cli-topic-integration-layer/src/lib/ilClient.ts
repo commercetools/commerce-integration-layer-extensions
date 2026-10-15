@@ -392,6 +392,14 @@ export interface CheckoutRule {
   mode: CheckoutMode;
 }
 
+/*
+ * shortcut: last write wins. The project-config routes (settings, checkout, schema/visibility)
+ * replace the whole section, and the CLI's add/remove, hide/show and `set` commands read,
+ * edit and PUT it back. Each GET returns a `version`, but no PUT sends it as a precondition
+ * (no If-Match or similar is known to be supported), so a Merchant Center edit made between
+ * the GET and the PUT is overwritten. If the server grows a version check, send the GET's
+ * `version` from the PUT helpers below and surface the conflict.
+ */
 /** The project's commercetools Checkout configuration: an ORDERED rule list, first match wins. */
 export interface CheckoutConfig {
   rules: CheckoutRule[];
