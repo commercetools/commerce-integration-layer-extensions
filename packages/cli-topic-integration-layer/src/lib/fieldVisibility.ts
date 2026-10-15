@@ -97,3 +97,31 @@ export const PUBLISH_PENDING =
 
 /** `set` always saves again, so unlike `hide` / `show` a re-run does retry the republish. */
 export const PUBLISH_PENDING_SET = `${PUBLISH_PENDING} Re-running this command also retries it.`;
+
+/**
+ * The deduplicated field names (positional args) and the trimmed `--type-key` that `hide` /
+ * `show` act on. Throws when either is empty.
+ */
+export function parseTargets(
+  argv: readonly string[],
+  typeKeyFlag: string,
+): { names: string[]; typeKey: string } {
+  const names = [...new Set(argv.map((f) => f.trim()).filter((f) => f !== ""))];
+  if (names.length === 0) throw new Error("At least one field name is required.");
+  const typeKey = typeKeyFlag.trim();
+  if (!typeKey) throw new Error("--type-key must not be empty.");
+  return { names, typeKey };
+}
+
+/**
+ * After a save: the route republishes the schema every time, and a failed republish leaves
+ * the rules stored but not yet public, which a pipeline must see as a failure (exit 2).
+ */
+export function reportRepublish(
+  publishPending: boolean,
+  pendingMessage: string,
+  io: { log: (line: string) => void; error: (message: string, opts: { exit: number }) => never },
+): void {
+  if (publishPending) io.error(pendingMessage, { exit: 2 });
+  io.log(REPUBLISHED);
+}

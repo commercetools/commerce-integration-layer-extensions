@@ -1,15 +1,9 @@
-import { readFile } from "node:fs/promises";
 import { Flags } from "@oclif/core";
 import { logRules, parseRules } from "../../../lib/checkoutRules.js";
 import { confirm } from "../../../lib/confirmPrompt.js";
 import { getCheckoutConfig, putCheckoutConfig } from "../../../lib/ilClient.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
-
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString("utf8");
-}
+import { readFileOrStdin } from "../../../lib/readInput.js";
 
 export default class CheckoutRulesSet extends IntegrationLayerCommand {
   static override description =
@@ -34,7 +28,7 @@ export default class CheckoutRulesSet extends IntegrationLayerCommand {
 
     let rules;
     try {
-      rules = parseRules(flags.file === "-" ? await readStdin() : await readFile(flags.file, "utf8"));
+      rules = parseRules(await readFileOrStdin(flags.file));
     } catch (e) {
       this.error((e as Error).message);
     }

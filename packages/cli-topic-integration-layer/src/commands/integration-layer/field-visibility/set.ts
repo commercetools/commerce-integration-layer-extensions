@@ -1,21 +1,15 @@
-import { readFile } from "node:fs/promises";
 import { Flags } from "@oclif/core";
 import { confirm } from "../../../lib/confirmPrompt.js";
 import {
   logCoordinates,
   parseCoordinates,
   PUBLISH_PENDING_SET,
-  REPUBLISHED,
+  reportRepublish,
   storedRules,
 } from "../../../lib/fieldVisibility.js";
 import { getFieldVisibility, putFieldVisibility } from "../../../lib/ilClient.js";
 import { IntegrationLayerCommand } from "../../../lib/base.js";
-
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-  return Buffer.concat(chunks).toString("utf8");
-}
+import { readFileOrStdin } from "../../../lib/readInput.js";
 
 export default class FieldVisibilitySet extends IntegrationLayerCommand {
   static override description =
@@ -40,7 +34,7 @@ export default class FieldVisibilitySet extends IntegrationLayerCommand {
 
     let next;
     try {
-      next = parseCoordinates(flags.file === "-" ? await readStdin() : await readFile(flags.file, "utf8"));
+      next = parseCoordinates(await readFileOrStdin(flags.file));
     } catch (e) {
       this.error((e as Error).message);
     }
@@ -68,9 +62,6 @@ export default class FieldVisibilitySet extends IntegrationLayerCommand {
 
     const saved = await putFieldVisibility(baseUrl, projectKey, authFetch, next);
     this.log(`✓ set ${saved.hiddenFields.length} hidden field(s) for '${projectKey}' (version ${saved.version}).`);
-    // The route republishes the schema on every save; a failed republish leaves the rules
-    // stored but not yet public, which a pipeline must see as a failure.
-    if (saved.publishPending) this.error(PUBLISH_PENDING_SET, { exit: 2 });
-    this.log(REPUBLISHED);
+    reportRepublish(saved.publishPending, PUBLISH_PENDING_SET, this);
   }
 }

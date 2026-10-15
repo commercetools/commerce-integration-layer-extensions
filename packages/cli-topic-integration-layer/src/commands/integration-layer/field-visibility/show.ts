@@ -3,8 +3,9 @@ import { confirm } from "../../../lib/confirmPrompt.js";
 import {
   coordinateKey,
   logCoordinates,
+  parseTargets,
   PUBLISH_PENDING,
-  REPUBLISHED,
+  reportRepublish,
   SPACES,
   storedRules,
 } from "../../../lib/fieldVisibility.js";
@@ -38,10 +39,12 @@ export default class FieldVisibilityShow extends IntegrationLayerCommand {
 
   async run(): Promise<void> {
     const { argv, flags } = await this.parse(FieldVisibilityShow);
-    const names = [...new Set((argv as string[]).map((f) => f.trim()).filter((f) => f !== ""))];
-    if (names.length === 0) this.error("At least one field name is required.");
-    const typeKey = flags["type-key"].trim();
-    if (!typeKey) this.error("--type-key must not be empty.");
+    let names: string[], typeKey: string;
+    try {
+      ({ names, typeKey } = parseTargets(argv as string[], flags["type-key"]));
+    } catch (e) {
+      this.error((e as Error).message);
+    }
 
     const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
     const { fields } = await getFieldVisibility(baseUrl, projectKey, authFetch);
@@ -72,9 +75,6 @@ export default class FieldVisibilityShow extends IntegrationLayerCommand {
 
     const saved = await putFieldVisibility(baseUrl, projectKey, authFetch, remaining);
     this.log(`✓ showed ${removing.length} field(s) for '${projectKey}' (version ${saved.version}).`);
-    // The route republishes the schema on every save; a failed republish leaves the rules
-    // stored but not yet public, which a pipeline must see as a failure.
-    if (saved.publishPending) this.error(PUBLISH_PENDING, { exit: 2 });
-    this.log(REPUBLISHED);
+    reportRepublish(saved.publishPending, PUBLISH_PENDING, this);
   }
 }
