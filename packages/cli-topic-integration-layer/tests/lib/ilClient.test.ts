@@ -277,6 +277,22 @@ describe("invokeDeployedApiExtension", () => {
     expect(JSON.parse(String(init?.body))).toEqual(INPUT);
   });
 
+  it("reports an OAuth failure by its error_description, not its code", async () => {
+    const authFetch = stubFetch(
+      new Response(
+        JSON.stringify({
+          error: "insufficient_scope",
+          error_description: `Token lacks 'manage_commerce_integration_layer:${PROJECT}'`,
+        }),
+        { status: 403 },
+      ),
+    );
+
+    await expect(invokeDeployedApiExtension(BASE, PROJECT, authFetch, INPUT)).rejects.toThrow(
+      /403.*Token lacks 'manage_commerce_integration_layer:my-project'/,
+    );
+  });
+
   it("passes a connector BLOCK (status 400 in the envelope) through as data, not an error", async () => {
     const authFetch = stubFetch(
       new Response(
