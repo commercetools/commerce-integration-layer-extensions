@@ -9,24 +9,22 @@ schema patterns, the entity catalog, the sandbox, and the publish flow. Start th
 Come back here for the code to edit, the details underneath the model, and the full CLI
 reference.
 
-> The Commerce Integration Layer is in public beta and its documentation is not yet on the
-> public site. The `docs.commercetools.com/integration-layer/…` links below are the
-> permanent home; until launch, read them on the preview host
-> `cw-integration-layer-docs.preview-docs.commercetools.com`.
-
-[docs]: https://docs.commercetools.com/integration-layer
+[docs]: https://docs.commercetools.com/commerce-integration-layer
 
 ## Read the documentation first
 
 | Page | What it gives you |
 | --- | --- |
-| [Overview](https://docs.commercetools.com/integration-layer/overview) | concepts and terminology — sessions, router, extensions, enrollment |
-| [Getting started](https://docs.commercetools.com/integration-layer/getting-started) | enroll a Project, mint a session, publish a first extension |
-| [GraphQL federation](https://docs.commercetools.com/integration-layer/graphql-federation) | subgraphs, entities, keys, stubs, and the directives |
-| [Choosing an extension type](https://docs.commercetools.com/integration-layer/extension-types) | schema extension vs API Extension vs Subscription |
-| [Schema extensions](https://docs.commercetools.com/integration-layer/schema-extensions) | the authoring model: patterns, entity catalog, sandbox, config, publishing |
-| [API Extensions](https://docs.commercetools.com/integration-layer/api-extensions) | validate, modify, or block a commercetools write |
-| [Best practices](https://docs.commercetools.com/integration-layer/best-practices) | sessions, extension design, degradation |
+| [Overview](https://docs.commercetools.com/commerce-integration-layer/overview) | concepts and terminology — the Experience API, extensions, how they compose |
+| [Get started](https://docs.commercetools.com/commerce-integration-layer/development/get-started) | enable the Commerce Integration Layer, install the CLI, publish a first extension |
+| [GraphQL federation](https://docs.commercetools.com/commerce-integration-layer/graphql-federation) | subgraphs, entities, keys, stubs, and the directives |
+| [Choose an extension type](https://docs.commercetools.com/commerce-integration-layer/extension-types) | schema extension vs Managed API Extension vs Subscription |
+| [Schema extensions](https://docs.commercetools.com/commerce-integration-layer/schema-extensions) | what a schema extension is and when to use one |
+| [Write schema extensions](https://docs.commercetools.com/commerce-integration-layer/development/writing-schema-extensions) | the authoring model: patterns, sandbox, config, local development, publishing |
+| [Managed API Extensions](https://docs.commercetools.com/commerce-integration-layer/managed-api-extensions) | validate, modify, or block a commercetools write |
+| [Write Managed API Extensions](https://docs.commercetools.com/commerce-integration-layer/development/writing-managed-api-extensions) | the handler contract, conditional triggers, chaining, local testing |
+| [Configure and deploy](https://docs.commercetools.com/commerce-integration-layer/development/configure-and-deploy) | extension config, the allowlist, and deploying a bundle |
+| [Best practices](https://docs.commercetools.com/commerce-integration-layer/development/best-practices) | extension design and degradation |
 
 ## What this repo adds
 
@@ -41,7 +39,7 @@ reference.
 
 ```bash
 # Install the CLI and the integration-layer topic (once), then log in
-npm install -g @commercetools/cli@dev
+npm install -g @commercetools/cli
 commercetools plugins install @commercetools/cli-topic-integration-layer
 commercetools auth login --project-key <your-project-key>
 
