@@ -20,10 +20,10 @@ the reference doesn't cover.
 - [Configuration beyond the CLI](#configuration-beyond-the-cli)
 - [What a request actually does](#what-a-request-actually-does)
 
-[docs]: https://docs.commercetools.com/integration-layer
-[fed]: https://docs.commercetools.com/integration-layer/graphql-federation
-[schema]: https://docs.commercetools.com/integration-layer/schema-extensions
-[apiext]: https://docs.commercetools.com/integration-layer/api-extensions
+[docs]: https://docs.commercetools.com/commerce-integration-layer
+[fed]: https://docs.commercetools.com/commerce-integration-layer/graphql-federation
+[schema]: https://docs.commercetools.com/commerce-integration-layer/schema-extensions
+[apiext]: https://docs.commercetools.com/commerce-integration-layer/managed-api-extensions
 
 ## What `parent` actually contains
 

@@ -7,14 +7,12 @@ and inspecting [Commerce Integration Layer][docs] extensions.
 It is published to the public npm registry and installed on demand as a runtime oclif
 plugin; it is never bundled into the base `@commercetools/cli`.
 
-[docs]: https://docs.commercetools.com/integration-layer
+[docs]: https://docs.commercetools.com/commerce-integration-layer
 
 ## Install
 
 ```bash
-# NB: use @dev for now — the `plugins` command (@oclif/plugin-plugins) ships only in
-# the CLI's dev prerelease. Drop @dev once it is promoted to the latest release.
-npm install -g @commercetools/cli@dev
+npm install -g @commercetools/cli
 
 # Opt in to the integration-layer topic (public npm — no auth needed)
 commercetools plugins install @commercetools/cli-topic-integration-layer
