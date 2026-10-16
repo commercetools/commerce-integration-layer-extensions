@@ -179,12 +179,12 @@ export async function pushBundle(
       "Content-Type": "text/javascript",
       // The route requires the original filename (percent-encoded; it carries the
       // module's type). The bundle is plain CommonJS, so name it `.cjs`.
-      "x-extension-filename": encodeURIComponent(filename),
+      "ct-extension-filename": encodeURIComponent(filename),
       // Percent-encoded for the same reason as the filename: keep an arbitrary value
       // header-safe. Omitted entirely when there's no revision to report — the route
       // treats a missing header as "no revision", not an error.
       ...(sourceRevision
-        ? { "x-extension-source-revision": encodeURIComponent(sourceRevision) }
+        ? { "ct-extension-source-revision": encodeURIComponent(sourceRevision) }
         : {}),
     },
     body: bundle,
@@ -218,9 +218,9 @@ export interface DownloadedBundle {
   bundle: Buffer;
   /** The original upload filename (from `Content-Disposition`), if the route sent one. */
   filename?: string;
-  /** The served revision's version number (from `X-Extension-Version`), if present. */
+  /** The served revision's version number (from `CT-Extension-Version`), if present. */
   version?: number;
-  /** The revision's source revision (from `X-Extension-Source-Revision`), if the push recorded one. */
+  /** The revision's source revision (from `CT-Extension-Source-Revision`), if the push recorded one. */
   sourceRevision?: string;
 }
 
@@ -288,12 +288,12 @@ export async function fetchBundleSource(
     throw new Error(`GET extension/bundle failed (${res.status}): ${text}`);
   }
   const bundle = Buffer.from(await res.arrayBuffer());
-  const versionHeader = res.headers.get("x-extension-version");
+  const versionHeader = res.headers.get("ct-extension-version");
   return {
     bundle,
     filename: filenameFromContentDisposition(res.headers.get("content-disposition")),
     version: versionHeader ? Number(versionHeader) : undefined,
-    sourceRevision: res.headers.get("x-extension-source-revision") ?? undefined,
+    sourceRevision: res.headers.get("ct-extension-source-revision") ?? undefined,
   };
 }
 

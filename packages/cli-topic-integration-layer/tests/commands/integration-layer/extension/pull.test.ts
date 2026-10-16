@@ -61,8 +61,8 @@ describe("integration-layer extension pull", () => {
         status: 200,
         headers: {
           "Content-Disposition": 'attachment; filename="extension.cjs"',
-          "X-Extension-Version": "3",
-          "X-Extension-Source-Revision": "r99",
+          "CT-Extension-Version": "3",
+          "CT-Extension-Source-Revision": "r99",
         },
       }),
     );
