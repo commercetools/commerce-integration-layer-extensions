@@ -96,6 +96,7 @@ describe("federated gateway over the IL + the combined extensions subgraph", () 
     gateway = await makeGateway({
       supergraphSdl: composed.supergraphSdl,
       integrationLayerBearer: "dev-session",
+      integrationLayerFetch: fetch,
     });
     const gatewayYoga = createYoga({
       plugins: [useApolloFederation({ gateway })],
@@ -112,5 +113,55 @@ describe("federated gateway over the IL + the combined extensions subgraph", () 
 
     expect(body.errors).toBeUndefined();
     expect(body.data).toEqual({ coreField: "core", hello: "hi Rui", goodbye: "bye" });
+  });
+
+  it("reaches the Commerce Integration Layer with the login's token, carrying the session in x-il-session", async () => {
+    const ilSchema = buildSubgraphSchema([
+      { typeDefs: parse(IL_SDL), resolvers: { Query: { coreField: () => "core" } } },
+    ]);
+    const ilYoga = createYoga({ schema: ilSchema, graphqlEndpoint: "/graphql", landingPage: false });
+    const seen: { authorization?: string; session?: string }[] = [];
+    const ilPort = await listen((req, res) => {
+      seen.push({
+        authorization: req.headers.authorization,
+        session: req.headers["x-il-session"] as string | undefined,
+      });
+      void ilYoga(req, res);
+    });
+    const merged = mergeExtensionSubgraph([{ name: "hello-world", typeDefs: A_SDL, resolvers: helloResolvers }]);
+    const extYoga = createYoga({ schema: merged.schema, graphqlEndpoint: "/_extension", landingPage: false });
+    const extPort = await listen((req, res) => void extYoga(req, res));
+    const composed = composeWithIntegrationLayer(IL_SDL, merged.sdl, {
+      integrationLayerUrl: `http://localhost:${ilPort}/graphql`,
+      extensionUrl: `http://localhost:${extPort}/_extension`,
+    });
+    expect(composed.ok).toBe(true);
+    if (!composed.ok) return;
+
+    // Stands in for the login's `authFetch`, which injects the commercetools token.
+    const authFetch: typeof fetch = (input, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set("authorization", "Bearer ct-token");
+      return fetch(input, { ...init, headers });
+    };
+    gateway = await makeGateway({
+      supergraphSdl: composed.supergraphSdl,
+      integrationLayerBearer: "dev-session",
+      integrationLayerFetch: authFetch,
+    });
+    const gatewayYoga = createYoga({
+      plugins: [useApolloFederation({ gateway })],
+      graphqlEndpoint: "/graphql",
+      landingPage: false,
+    });
+
+    const res = await gatewayYoga.fetch("http://gateway/graphql", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: "{ coreField }" }),
+    });
+
+    expect(await res.json()).toEqual({ data: { coreField: "core" } });
+    expect(seen).toEqual([{ authorization: "Bearer ct-token", session: "dev-session" }]);
   });
 });

@@ -7,9 +7,11 @@
 // We use Apollo Gateway (the reference Federation
 // implementation) because the extension model leans on `@interfaceObject` and only
 // the reference gateway resolves that correctly. Both subgraphs are reached over
-// HTTP, so the extension runs as a genuine subgraph; the integration-layer data
-// source carries an anonymous session bearer (the Commerce Integration Layer re-validates the
-// bearer's project against the URL).
+// HTTP, so the extension runs as a genuine subgraph. The integration-layer data
+// source reaches the core subgraph through the extensions edge's
+// `/<project>/main/subgraph/graphql`, authenticated with the login's commercetools
+// token; the anonymous session bearer rides in `x-il-session` (the Commerce Integration
+// Layer re-validates the session's project against the URL).
 
 import { ApolloGateway, RemoteGraphQLDataSource } from "@apollo/gateway";
 import { INTEGRATION_LAYER_SERVICE } from "./compose.js";
@@ -40,17 +42,28 @@ export async function mintAnonymousSession(
   return token;
 }
 
+/**
+ * The core subgraph's GraphQL as the gateway reaches it: the extensions edge's
+ * `/<project>/main/subgraph/graphql`, a hop that requires the login's commercetools
+ * token. The core subgraph itself is not on the internet.
+ */
+export function coreSubgraphUrl(extensionsEdgeUrl: string, projectKey: string): string {
+  return `${projectUrl(extensionsEdgeUrl, projectKey)}/subgraph/graphql`;
+}
+
 export interface GatewayOptions {
   /** The composed supergraph the planner routes against (from `composeWithIntegrationLayer`). */
   supergraphSdl: string;
-  /** Anonymous session bearer, attached to the integration-layer data source's requests. */
+  /** Anonymous session bearer, sent as `x-il-session` on the integration-layer data source's requests. */
   integrationLayerBearer: string;
+  /** The login's `authFetch`: the integration-layer data source's fetcher, so its token authenticates the hop. */
+  integrationLayerFetch: typeof fetch;
 }
 
 /**
  * Build and load an Apollo Gateway over the composed supergraph. Each subgraph is an
  * HTTP data source addressed by its baked URL; the integration-layer one carries the
- * session bearer. Resolves once the gateway has loaded its query planner. Call
+ * login's token and the session bearer. Resolves once the gateway has loaded its query planner. Call
  * `.stop()` on the returned gateway when replacing it (on a schema change).
  */
 export async function makeGateway(opts: GatewayOptions): Promise<ApolloGateway> {
@@ -59,14 +72,16 @@ export async function makeGateway(opts: GatewayOptions): Promise<ApolloGateway> 
     buildService: ({ name, url }) =>
       new RemoteGraphQLDataSource({
         url,
-        // Use Node's global `fetch` (undici) for every data source; Apollo Gateway's
-        // default fetcher breaks its agent selection in some environments.
-        fetcher: globalThis.fetch as unknown as RemoteGraphQLDataSource["fetcher"],
+        // A `fetch` (undici) for every data source; Apollo Gateway's default fetcher
+        // breaks its agent selection in some environments. Only the integration-layer
+        // subgraph is authenticated; the extension subgraph is the dev server's own
+        // internal endpoint.
+        fetcher: (name === INTEGRATION_LAYER_SERVICE
+          ? opts.integrationLayerFetch
+          : globalThis.fetch) as unknown as RemoteGraphQLDataSource["fetcher"],
         willSendRequest: ({ request }) => {
-          // Authenticate only the integration-layer subgraph; the extension subgraph
-          // is the dev server's own internal endpoint and needs no bearer.
           if (name === INTEGRATION_LAYER_SERVICE) {
-            request.http?.headers.set("authorization", `Bearer ${opts.integrationLayerBearer}`);
+            request.http?.headers.set("x-il-session", opts.integrationLayerBearer);
           }
         },
       }),
