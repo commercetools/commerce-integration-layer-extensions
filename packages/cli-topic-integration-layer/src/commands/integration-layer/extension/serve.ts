@@ -36,7 +36,7 @@ import {
   entrySegmentFor,
   mergeExtensionSubgraph,
 } from "../../../lib/tooling/extensions.js";
-import { coreSubgraphUrl, makeGateway, mintAnonymousSession } from "../../../lib/tooling/gateway.js";
+import { makeGateway, mintAnonymousSession } from "../../../lib/tooling/gateway.js";
 import { fetchSubgraphSdl, getAllowlist } from "../../../lib/ilClient.js";
 import {
   IntegrationLayerCommand,
@@ -50,6 +50,7 @@ import {
   wrapResolverMap,
 } from "../../../lib/tooling/sandboxFetch.js";
 import { extensionConfigFromEnv } from "../../../lib/extensionConfig.js";
+import { projectUrl } from "../../../lib/projectUrl.js";
 import {
   parseEnvFile,
   resolveEnvFileLocation,
@@ -198,6 +199,15 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     }),
   };
 
+  /**
+   * The identity/storefront edge (the `auth.` host) — where `--gateway`/`--all` mint the
+   * anonymous session AND reach the Commerce Integration Layer's CORE subgraph `/graphql`. Both are
+   * served by the identity edge, a DIFFERENT host from the extensions edge
+   * ({@link IlContext.baseUrl}, `extensions.`, which serves `/subgraph`). The gateway must
+   * route to the core subgraph here, NOT the `graphql.` router edge, whose COMPOSED graph
+   * would double-count the local extension. Derived by convention from the login
+   * region, like the other edges.
+   */
   private warnUnrestrictedResolverFetch(reason: string): void {
     this.logToStderr(
       `⚠ ${reason} — resolver fetch is UNRESTRICTED locally (production still enforces the project allowlist)`,
@@ -247,12 +257,6 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     return sandboxFetch ? wrapResolverMap(resolvers, sandboxFetch) : resolvers;
   }
 
-  /**
-   * The identity edge (the `auth.` host), where `--gateway`/`--all` mint the anonymous
-   * session. Their core-subgraph calls go to the extensions edge instead
-   * (`/<project>/main/subgraph/graphql`, see {@link coreSubgraphUrl}), never the `graphql.`
-   * router edge, whose composed graph would double-count the local extension.
-   */
   private resolveAuthEdge(): string {
     // Derived by convention from the login region, like the other edges.
     const authUrl = authEdgeUrlForRegion(this.requirePrincipal().getRegion());
@@ -290,15 +294,17 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     let integrationLayerSdl: string | undefined;
     let integrationLayerGraphqlUrl = "";
     let integrationLayerBearer: string | undefined;
-    let integrationLayerFetch: typeof fetch | undefined;
     if (withIntegrationLayer) {
       const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
-      integrationLayerGraphqlUrl = coreSubgraphUrl(baseUrl, projectKey);
-      integrationLayerFetch = authFetch;
+      // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the
+      // gateway routes to and the /session it mints are on the identity edge, reached via
+      // the identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
+      const authUrl = this.resolveAuthEdge();
+      integrationLayerGraphqlUrl = `${projectUrl(authUrl, projectKey)}/graphql`;
       this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
       integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
       if (flags.gateway) {
-        integrationLayerBearer = await mintAnonymousSession(this.resolveAuthEdge(), projectKey);
+        integrationLayerBearer = await mintAnonymousSession(authUrl, projectKey);
         this.log("Minted an anonymous session for the gateway.");
       }
     }
@@ -343,7 +349,6 @@ export default class ExtensionServe extends IntegrationLayerCommand {
         const gw = await makeGateway({
           supergraphSdl: composed.supergraphSdl,
           integrationLayerBearer: integrationLayerBearer!,
-          integrationLayerFetch: integrationLayerFetch!,
         });
         const prev = apolloGateway;
         apolloGateway = gw;
@@ -498,10 +503,14 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     // Reach the Commerce Integration Layer exactly like --gateway: its core-subgraph SDL is the
     // compose baseline, and an anonymous session authenticates the gateway's calls.
     const { baseUrl, projectKey, authFetch } = ilContext;
-    const integrationLayerGraphqlUrl = coreSubgraphUrl(baseUrl, projectKey);
+    // /subgraph is on the extensions edge (baseUrl); the core-subgraph /graphql the gateway
+    // routes to and the /session it mints are on the identity edge, reached via the
+    // identity/auth edge — a different host in the deployed split (see resolveAuthEdge).
+    const authUrl = this.resolveAuthEdge();
+    const integrationLayerGraphqlUrl = `${projectUrl(authUrl, projectKey)}/graphql`;
     this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
     const integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
-    const integrationLayerBearer = await mintAnonymousSession(this.resolveAuthEdge(), projectKey);
+    const integrationLayerBearer = await mintAnonymousSession(authUrl, projectKey);
     this.log("Minted an anonymous session for the gateway.");
 
     // The single combined-extensions subgraph endpoint — the gateway's one data source
@@ -551,11 +560,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
         return;
       }
       try {
-        const gw = await makeGateway({
-          supergraphSdl: composed.supergraphSdl,
-          integrationLayerBearer,
-          integrationLayerFetch: authFetch,
-        });
+        const gw = await makeGateway({ supergraphSdl: composed.supergraphSdl, integrationLayerBearer });
         const prev = apolloGateway;
         apolloGateway = gw;
         gatewaySupergraphSdl = composed.supergraphSdl;
