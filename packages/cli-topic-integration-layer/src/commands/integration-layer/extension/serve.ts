@@ -36,7 +36,7 @@ import {
   entrySegmentFor,
   mergeExtensionSubgraph,
 } from "../../../lib/tooling/extensions.js";
-import { coreSubgraphUrl, makeGateway, mintAnonymousSession } from "../../../lib/tooling/gateway.js";
+import { coreSubgraphUrl, makeGateway, mintAnonymousSession, type GatewayOptions } from "../../../lib/tooling/gateway.js";
 import { fetchSubgraphSdl, getAllowlist } from "../../../lib/ilClient.js";
 import {
   IntegrationLayerCommand,
@@ -287,16 +287,18 @@ export default class ExtensionServe extends IntegrationLayerCommand {
     const withIntegrationLayer = flags.compose || flags.gateway;
     let integrationLayerSdl: string | undefined;
     let integrationLayerGraphqlUrl = "";
-    let integrationLayerBearer: string | undefined;
-    let integrationLayerFetch: typeof fetch | undefined;
+    // The gateway's upstream credentials; set only under `--gateway`.
+    let gatewayUpstream: Pick<GatewayOptions, "integrationLayerBearer" | "integrationLayerFetch"> | undefined;
     if (withIntegrationLayer) {
       const { baseUrl, projectKey, authFetch } = await this.resolveIlContext(flags);
       integrationLayerGraphqlUrl = coreSubgraphUrl(baseUrl, projectKey);
-      integrationLayerFetch = authFetch;
       this.log(`Fetching integration-layer subgraph SDL for '${projectKey}' from ${baseUrl} …`);
       integrationLayerSdl = await fetchSubgraphSdl(baseUrl, projectKey, authFetch);
       if (flags.gateway) {
-        integrationLayerBearer = await mintAnonymousSession(this.resolveAuthEdge(), projectKey);
+        gatewayUpstream = {
+          integrationLayerBearer: await mintAnonymousSession(this.resolveAuthEdge(), projectKey),
+          integrationLayerFetch: authFetch,
+        };
         this.log("Minted an anonymous session for the gateway.");
       }
     }
@@ -331,7 +333,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
         return;
       }
       log(`✓ composes with the Commerce Integration Layer — full schema at http://localhost:${port}/composed`);
-      if (!flags.gateway) return;
+      if (!gatewayUpstream) return;
 
       if (composed.supergraphSdl === gatewaySupergraphSdl) {
         log("  (gateway plan unchanged — extension reloaded in place)");
@@ -340,8 +342,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
       try {
         const gw = await makeGateway({
           supergraphSdl: composed.supergraphSdl,
-          integrationLayerBearer: integrationLayerBearer!,
-          integrationLayerFetch: integrationLayerFetch!,
+          ...gatewayUpstream,
         });
         const prev = apolloGateway;
         apolloGateway = gw;
