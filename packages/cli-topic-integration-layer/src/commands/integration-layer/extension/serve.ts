@@ -249,9 +249,7 @@ export default class ExtensionServe extends IntegrationLayerCommand {
 
   /**
    * The identity edge (the `auth.` host), where `--gateway`/`--all` mint the anonymous
-   * session. Their core-subgraph calls go to the extensions edge instead
-   * (`/<project>/main/subgraph/graphql`, see {@link coreSubgraphUrl}), never the `graphql.`
-   * router edge, whose composed graph would double-count the local extension.
+   * session.
    */
   private resolveAuthEdge(): string {
     // Derived by convention from the login region, like the other edges.

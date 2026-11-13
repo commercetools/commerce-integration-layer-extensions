@@ -43,9 +43,8 @@ export async function mintAnonymousSession(
 }
 
 /**
- * The core subgraph's GraphQL as the gateway reaches it: the extensions edge's
- * `/<project>/main/subgraph/graphql`, a hop that requires the login's commercetools
- * token. The core subgraph itself is not on the internet.
+ * The core subgraph's GraphQL endpoint for the gateway: the extensions edge's
+ * `/<project>/main/subgraph/graphql`, which requires the login's commercetools token.
  */
 export function coreSubgraphUrl(extensionsEdgeUrl: string, projectKey: string): string {
   return `${projectUrl(extensionsEdgeUrl, projectKey)}/subgraph/graphql`;
@@ -72,10 +71,10 @@ export async function makeGateway(opts: GatewayOptions): Promise<ApolloGateway> 
     buildService: ({ name, url }) =>
       new RemoteGraphQLDataSource({
         url,
-        // A `fetch` (undici) for every data source; Apollo Gateway's default fetcher
-        // breaks its agent selection in some environments. Only the integration-layer
-        // subgraph is authenticated; the extension subgraph is the dev server's own
-        // internal endpoint.
+        // Every data source fetches with a `fetch` (undici), since Apollo Gateway's
+        // default fetcher breaks its agent selection in some environments. The
+        // integration-layer subgraph uses the login's `authFetch` and carries the session
+        // in `x-il-session`; the extension subgraph is the dev server's own endpoint.
         fetcher: (name === INTEGRATION_LAYER_SERVICE
           ? opts.integrationLayerFetch
           : globalThis.fetch) as unknown as RemoteGraphQLDataSource["fetcher"],
