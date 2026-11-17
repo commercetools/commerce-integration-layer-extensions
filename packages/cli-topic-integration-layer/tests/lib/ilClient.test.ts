@@ -7,6 +7,7 @@ import {
   patchConfig,
   invokeDeployedApiExtension,
   fetchBundleSource,
+  fetchDeployedApiSchemaSdl,
   fetchPublicApiSchemaSdl,
   type AuthFetch,
 } from "../../src/lib/ilClient.js";
@@ -369,5 +370,23 @@ describe("fetchPublicApiSchemaSdl", () => {
     await expect(fetchPublicApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(
       /403.*Token lacks the scope/,
     );
+  });
+});
+
+describe("fetchDeployedApiSchemaSdl", () => {
+  it("says the project has nothing published when the route reports it by code", async () => {
+    const authFetch = stubFetch(
+      new Response(JSON.stringify({ errors: [{ code: "SchemaNotPublished", message: "x" }] }), {
+        status: 404,
+      }),
+    );
+    await expect(fetchDeployedApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(
+      /has no composed schema published yet/,
+    );
+  });
+
+  it("keeps the status and body of a 404 from a server without the route", async () => {
+    const authFetch = stubFetch(new Response("Cannot GET /my-project/main/schema/api", { status: 404 }));
+    await expect(fetchDeployedApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(/404.*Cannot GET/);
   });
 });
