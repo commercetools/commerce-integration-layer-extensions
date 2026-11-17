@@ -660,6 +660,42 @@ deployed extension, not the one in your working directory, and can lag until the
 republish. Use it to check that your
 storefront's operations are valid against the Project.
 
+#### Checking your storefront's operations in CI
+
+The deployed edge has introspection off, so a CI job cannot ask it what a shopper can
+query. Read the public API schema instead, once per run, and validate your operations
+against it locally. No GraphQL request is sent.
+
+1. Create an API client for the Project with only the `view_commerce_integration_layer`
+   scope. It cannot change the Project, so it is safer to store in CI than the login the
+   CLI uses. It can still read the Project's extension and configuration, so keep it in
+   your CI secrets.
+2. Get a token with the client credentials grant from your Region's commercetools auth
+   host, with the scope `view_commerce_integration_layer:<project-key>`.
+3. Read the schema from the Extensions edge and validate:
+
+```js
+import { buildSchema, parse, validate } from "graphql";
+
+const res = await fetch(`${EXTENSIONS_EDGE}/${PROJECT}/main/schema/public`, {
+  headers: { authorization: `Bearer ${token}`, accept: "text/plain" },
+});
+if (!res.ok) throw new Error(`could not read the schema (${res.status})`);
+const schema = buildSchema(await res.text());
+
+const errors = operations.flatMap((source) => validate(schema, parse(source)));
+if (errors.length) throw new Error(errors.map((e) => e.message).join("\n"));
+```
+
+The schema is the published one, so it includes the extension deployed to the Project
+and can lag until the next republish. If you change an extension, also compose it with
+the Project's core subgraph (`extension serve --compose` serves the result at
+`/schema.graphql`) and validate your operations against that before you push.
+
+The CLI uses the token that `commercetools auth login` saved, so a CI job calls the
+route directly, as above. `schema fetch --public` does the same read when you are logged
+in.
+
 ### `config`
 
 ```
