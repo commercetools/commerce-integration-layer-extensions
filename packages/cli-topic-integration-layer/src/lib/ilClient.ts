@@ -137,22 +137,16 @@ export async function fetchDeployedApiSchemaSdl(
   return text;
 }
 
-/**
- * The 404 for a project that has published nothing carries the error code
- * `SchemaNotPublished`. Matching the message text is for servers that predate the
- * code. Delete it once the code is deployed to every environment.
- */
+/** The 404 for a project that has published nothing carries this error code. */
 const SCHEMA_NOT_PUBLISHED_CODE = "SchemaNotPublished";
-const SCHEMA_NOT_PUBLISHED_TEXT = "No composed schema published";
 
 function isSchemaNotPublished(body: string): boolean {
   try {
     const { errors } = JSON.parse(body) as { errors?: { code?: unknown }[] };
-    if (errors?.some((e) => e.code === SCHEMA_NOT_PUBLISHED_CODE)) return true;
+    return errors?.some((e) => e.code === SCHEMA_NOT_PUBLISHED_CODE) ?? false;
   } catch {
-    // not JSON: fall through to the text match
+    return false;
   }
-  return body.includes(SCHEMA_NOT_PUBLISHED_TEXT);
 }
 
 /**

@@ -334,21 +334,10 @@ describe("fetchPublicApiSchemaSdl", () => {
     expect(init?.headers).toEqual({ accept: "text/plain" });
   });
 
-  it("falls back to the message text for a server that sends no code", async () => {
-    const authFetch = stubFetch(
-      new Response(JSON.stringify({ error: "No composed schema published for this project" }), {
-        status: 404,
-      }),
-    );
-    await expect(fetchPublicApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(
-      /has no composed schema published yet/,
-    );
-  });
-
   it("says the project has nothing published when the 404 carries the code", async () => {
     const authFetch = stubFetch(
       new Response(
-        JSON.stringify({ errors: [{ code: "SchemaNotPublished", message: "Reworded by the server." }] }),
+        JSON.stringify({ errors: [{ code: "SchemaNotPublished" }] }),
         { status: 404 },
       ),
     );
@@ -376,7 +365,7 @@ describe("fetchPublicApiSchemaSdl", () => {
 describe("fetchDeployedApiSchemaSdl", () => {
   it("says the project has nothing published when the 404 carries the code", async () => {
     const authFetch = stubFetch(
-      new Response(JSON.stringify({ errors: [{ code: "SchemaNotPublished", message: "x" }] }), {
+      new Response(JSON.stringify({ errors: [{ code: "SchemaNotPublished" }] }), {
         status: 404,
       }),
     );
