@@ -125,7 +125,7 @@ export async function fetchDeployedApiSchemaSdl(
   const url = `${projectUrl(baseUrl, projectKey)}/schema/api`;
   const res = await authFetch(url, { headers: { accept: "text/plain" } });
   const text = await res.text();
-  if (res.status === 404) {
+  if (res.status === 404 && isSchemaNotPublished(text)) {
     throw new Error(
       `project '${projectKey}' has no composed schema published yet — publish one from the ` +
         `Merchant Center console (Schema → Refresh schema), or drop --deployed to compose locally`,
