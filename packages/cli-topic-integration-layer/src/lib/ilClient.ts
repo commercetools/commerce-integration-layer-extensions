@@ -114,8 +114,8 @@ export async function fetchSubgraphSdl(
  *
  * This is the authenticated replacement for introspecting the public edge: the
  * router runs `introspection: false`, so the composed graph is read here, over the
- * same `manage_project` boundary as `/subgraph`. 404 means the project has never
- * published a composable version.
+ * same `manage_project` boundary as `/subgraph`. A 404 with the `SchemaNotPublished`
+ * code means the project has never published a composable version.
  */
 export async function fetchDeployedApiSchemaSdl(
   baseUrl: string,
@@ -138,10 +138,9 @@ export async function fetchDeployedApiSchemaSdl(
 }
 
 /**
- * How the Commerce Integration Layer says a project has published nothing: the error
- * `code` of its 404 (octolog PR 1266 follow-up), or, from a server that predates the
- * code, the message text. The text is the fallback only; drop it once the code is
- * deployed everywhere.
+ * The 404 for a project that has published nothing carries the error code
+ * `SchemaNotPublished`. Matching the message text is for servers that predate the
+ * code. Delete it once the code is deployed to every environment.
  */
 const SCHEMA_NOT_PUBLISHED_CODE = "SchemaNotPublished";
 const SCHEMA_NOT_PUBLISHED_TEXT = "No composed schema published";
@@ -163,7 +162,7 @@ function isSchemaNotPublished(body: string): boolean {
  * view scope.
  *
  * A 404 can mean the project has published nothing, or that the Commerce Integration
- * Layer does not serve the route. Only the first has the message below.
+ * Layer does not serve the route. Only the first carries the `SchemaNotPublished` code.
  */
 export async function fetchPublicApiSchemaSdl(
   baseUrl: string,
