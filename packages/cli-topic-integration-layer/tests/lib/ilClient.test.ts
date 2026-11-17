@@ -334,7 +334,7 @@ describe("fetchPublicApiSchemaSdl", () => {
     expect(init?.headers).toEqual({ accept: "text/plain" });
   });
 
-  it("says the project has nothing published when the route reports it", async () => {
+  it("falls back to the message text for a server that sends no code", async () => {
     const authFetch = stubFetch(
       new Response(JSON.stringify({ error: "No composed schema published for this project" }), {
         status: 404,
@@ -345,7 +345,7 @@ describe("fetchPublicApiSchemaSdl", () => {
     );
   });
 
-  it("recognises the nothing-published 404 by its error code, whatever the message says", async () => {
+  it("says the project has nothing published when the 404 carries the code", async () => {
     const authFetch = stubFetch(
       new Response(
         JSON.stringify({ errors: [{ code: "SchemaNotPublished", message: "Reworded by the server." }] }),
@@ -357,7 +357,7 @@ describe("fetchPublicApiSchemaSdl", () => {
     );
   });
 
-  it("keeps the status and body of a 404 that is not the publish message", async () => {
+  it("keeps the status and body of a 404 that is not the nothing-published one", async () => {
     // A server that does not have the route answers with its own 404 body.
     const authFetch = stubFetch(new Response("Cannot GET /my-project/main/schema/public", { status: 404 }));
     await expect(fetchPublicApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(
@@ -374,7 +374,7 @@ describe("fetchPublicApiSchemaSdl", () => {
 });
 
 describe("fetchDeployedApiSchemaSdl", () => {
-  it("says the project has nothing published when the route reports it by code", async () => {
+  it("says the project has nothing published when the 404 carries the code", async () => {
     const authFetch = stubFetch(
       new Response(JSON.stringify({ errors: [{ code: "SchemaNotPublished", message: "x" }] }), {
         status: 404,
