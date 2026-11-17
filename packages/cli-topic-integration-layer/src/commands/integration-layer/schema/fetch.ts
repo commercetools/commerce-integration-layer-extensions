@@ -5,7 +5,7 @@ import { IntegrationLayerCommand } from "../../../lib/base.js";
 
 export default class SchemaFetch extends IntegrationLayerCommand {
   static override description =
-    "Print (or write) the project's core-subgraph SDL — the input extensions compose against — or, with --public, its public API schema";
+    "Print (or write) the project's core-subgraph SDL — the input extensions compose against — or, with --public, its deployed public API schema";
 
   static override examples = [
     "<%= config.bin %> integration-layer schema fetch",
@@ -16,7 +16,7 @@ export default class SchemaFetch extends IntegrationLayerCommand {
   static override flags = {
     public: Flags.boolean({
       description:
-        "fetch the public API schema (what a shopper can query, with no hidden fields) instead of the core subgraph",
+        "fetch the schema as deployed (what a shopper can query, with no hidden fields) instead of the core subgraph. Your local extension is not included",
     }),
     out: Flags.string({ description: "write the SDL to this file instead of stdout" }),
   };

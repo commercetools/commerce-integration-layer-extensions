@@ -656,7 +656,8 @@ changed under you.
 
 With `--public` it prints the Project's public API schema instead: what a shopper can
 query, with no hidden fields. It is the published composition, so it includes the
-deployed extension and can lag until the next republish. Use it to check that your
+deployed extension, not the one in your working directory, and can lag until the next
+republish. Use it to check that your
 storefront's operations are valid against the Project.
 
 ### `config`
