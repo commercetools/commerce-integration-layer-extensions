@@ -660,6 +660,64 @@ deployed extension, not the one in your working directory, and can lag until the
 republish. Use it to check that your
 storefront's operations are valid against the Project.
 
+#### Checking your storefront's operations in CI
+
+The deployed edge has introspection off, so a CI job cannot ask it what a shopper can
+query. Read the public API schema instead, once per run, and validate your operations
+against it locally. No GraphQL request is sent.
+
+1. Create an API client for the Project with only the `view_commerce_integration_layer`
+   scope. It cannot change the Project, so it is safer to store in CI than the login the
+   CLI uses. It can still read the Project's extension and configuration, so keep it in
+   your CI secrets.
+2. Get a token with the client credentials grant from your Region's commercetools auth
+   host, with the scope `view_commerce_integration_layer:<project-key>`.
+3. Read the schema from the Extensions edge and validate. Supply these inputs:
+   - `EXTENSIONS_EDGE`: your Region's Extensions edge base URL (without a trailing `/`).
+   - `PROJECT`: your Project key.
+   - `token`: the access token obtained in step 2.
+   - `operations`: an array of complete executable GraphQL document strings, each
+     including every fragment it references, directly or indirectly. Assemble shared
+     fragment definitions with each operation before validating; do not pass separate
+     operation and fragment files as separate array entries.
+
+```js
+import {
+  buildSchema,
+  NoSchemaIntrospectionCustomRule,
+  parse,
+  specifiedRules,
+  validate,
+} from "graphql";
+
+const res = await fetch(`${EXTENSIONS_EDGE}/${PROJECT}/main/schema/public`, {
+  headers: { authorization: `Bearer ${token}`, accept: "text/plain" },
+});
+if (!res.ok) throw new Error(`could not read the schema (${res.status})`);
+const schema = buildSchema(await res.text());
+const rules = [...specifiedRules, NoSchemaIntrospectionCustomRule];
+
+const errors = operations.flatMap((source) => validate(schema, parse(source), rules));
+if (errors.length) throw new Error(errors.map((e) => e.message).join("\n"));
+```
+
+The schema is the published one, so it includes the extension deployed to the Project
+and can lag until the next republish. If you change a GraphQL schema extension,
+also compose the bundle you will push with the Project's core subgraph and validate
+your operations against it before you push:
+
+- For a single-extension bundle, run `extension serve --compose`.
+- For an `extensions/*` workspace, run `extension serve --all` from the workspace
+  root. This currently requires every discovered package to export `typeDefs` and
+  `resolvers`; API-Extensions-only packages are not supported by this local server.
+
+Both modes serve the result at `/schema.graphql`. API-Extensions-only bundles have
+no local GraphQL schema to compose.
+
+The CLI uses the token that `commercetools auth login` saved, so a CI job calls the
+route directly, as above. `schema fetch --public` does the same read when you are logged
+in.
+
 ### `config`
 
 ```
