@@ -7,6 +7,7 @@ import {
   patchConfig,
   invokeDeployedApiExtension,
   fetchBundleSource,
+  fetchPublicApiSchemaSdl,
   type AuthFetch,
 } from "../../src/lib/ilClient.js";
 
@@ -316,6 +317,45 @@ describe("invokeDeployedApiExtension", () => {
     );
     await expect(invokeDeployedApiExtension(BASE, PROJECT, authFetch, INPUT)).rejects.toThrow(
       /404.*No extensions-sandbox deployment/,
+    );
+  });
+});
+
+describe("fetchPublicApiSchemaSdl", () => {
+  it("GETs the public schema route as text and returns the SDL", async () => {
+    const authFetch = stubFetch(new Response("type Query { product: String }", { status: 200 }));
+
+    const sdl = await fetchPublicApiSchemaSdl(BASE, PROJECT, authFetch);
+
+    expect(sdl).toBe("type Query { product: String }");
+    const [url, init] = (authFetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe(`${BASE}/${PROJECT}/main/schema/public`);
+    expect(init?.headers).toEqual({ accept: "text/plain" });
+  });
+
+  it("says the project has nothing published when the route reports it", async () => {
+    const authFetch = stubFetch(
+      new Response(JSON.stringify({ error: "No composed schema published for this project" }), {
+        status: 404,
+      }),
+    );
+    await expect(fetchPublicApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(
+      /has no composed schema published yet/,
+    );
+  });
+
+  it("keeps the status and body of a 404 that is not the publish message", async () => {
+    // A server that does not have the route answers with its own 404 body.
+    const authFetch = stubFetch(new Response("Cannot GET /my-project/main/schema/public", { status: 404 }));
+    await expect(fetchPublicApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(
+      /404.*Cannot GET/,
+    );
+  });
+
+  it("throws with the status and body on a refusal", async () => {
+    const authFetch = stubFetch(new Response("Token lacks the scope", { status: 403 }));
+    await expect(fetchPublicApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(
+      /403.*Token lacks the scope/,
     );
   });
 });

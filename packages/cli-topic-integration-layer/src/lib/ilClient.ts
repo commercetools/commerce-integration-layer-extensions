@@ -137,6 +137,32 @@ export async function fetchDeployedApiSchemaSdl(
   return text;
 }
 
+/**
+ * GET the project's PUBLIC API SCHEMA — the shopper contract, with no merchant-hidden
+ * fields (`GET …/schema/public`). It is the published composition, so it includes the
+ * deployed extension and can lag a republish. Unlike `/schema/api`, it needs only the
+ * view scope.
+ *
+ * A 404 can mean the project has published nothing, or that the Commerce Integration
+ * Layer does not serve the route. Only the first has the message below.
+ */
+export async function fetchPublicApiSchemaSdl(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+): Promise<string> {
+  const url = `${projectUrl(baseUrl, projectKey)}/schema/public`;
+  const res = await authFetch(url, { headers: { accept: "text/plain" } });
+  const text = await res.text();
+  if (res.status === 404 && text.includes("No composed schema published")) {
+    throw new Error(`project '${projectKey}' has no composed schema published yet`);
+  }
+  if (!res.ok) {
+    throw new Error(`could not fetch the public API schema (${res.status}) from ${url}: ${text}`);
+  }
+  return text;
+}
+
 /** POST a candidate SDL to the composition + breaking-change gate (`POST …/extension/validate`). */
 export async function remoteValidate(
   baseUrl: string,
