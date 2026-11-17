@@ -138,11 +138,23 @@ export async function fetchDeployedApiSchemaSdl(
 }
 
 /**
- * The text the Commerce Integration Layer sends with the 404 for a project that has
- * published nothing (octolog server). The CLI matches on it, so a server-side rewording
- * silently degrades the message to the generic one; a test pins it.
+ * How the Commerce Integration Layer says a project has published nothing: the error
+ * `code` of its 404 (octolog PR 1266 follow-up), or, from a server that predates the
+ * code, the message text. The text is the fallback only; drop it once the code is
+ * deployed everywhere.
  */
-export const NO_COMPOSED_SCHEMA_PUBLISHED = "No composed schema published";
+const SCHEMA_NOT_PUBLISHED_CODE = "SchemaNotPublished";
+const SCHEMA_NOT_PUBLISHED_TEXT = "No composed schema published";
+
+function isSchemaNotPublished(body: string): boolean {
+  try {
+    const { errors } = JSON.parse(body) as { errors?: { code?: unknown }[] };
+    if (errors?.some((e) => e.code === SCHEMA_NOT_PUBLISHED_CODE)) return true;
+  } catch {
+    // not JSON: fall through to the text match
+  }
+  return body.includes(SCHEMA_NOT_PUBLISHED_TEXT);
+}
 
 /**
  * GET the project's PUBLIC API SCHEMA — the shopper contract, with no merchant-hidden
@@ -161,7 +173,7 @@ export async function fetchPublicApiSchemaSdl(
   const url = `${projectUrl(baseUrl, projectKey)}/schema/public`;
   const res = await authFetch(url, { headers: { accept: "text/plain" } });
   const text = await res.text();
-  if (res.status === 404 && text.includes(NO_COMPOSED_SCHEMA_PUBLISHED)) {
+  if (res.status === 404 && isSchemaNotPublished(text)) {
     throw new Error(`project '${projectKey}' has no composed schema published yet`);
   }
   if (!res.ok) {

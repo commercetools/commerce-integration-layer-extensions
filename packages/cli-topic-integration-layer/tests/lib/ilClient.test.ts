@@ -344,6 +344,18 @@ describe("fetchPublicApiSchemaSdl", () => {
     );
   });
 
+  it("recognises the nothing-published 404 by its error code, whatever the message says", async () => {
+    const authFetch = stubFetch(
+      new Response(
+        JSON.stringify({ errors: [{ code: "SchemaNotPublished", message: "Reworded by the server." }] }),
+        { status: 404 },
+      ),
+    );
+    await expect(fetchPublicApiSchemaSdl(BASE, PROJECT, authFetch)).rejects.toThrow(
+      /has no composed schema published yet/,
+    );
+  });
+
   it("keeps the status and body of a 404 that is not the publish message", async () => {
     // A server that does not have the route answers with its own 404 body.
     const authFetch = stubFetch(new Response("Cannot GET /my-project/main/schema/public", { status: 404 }));
