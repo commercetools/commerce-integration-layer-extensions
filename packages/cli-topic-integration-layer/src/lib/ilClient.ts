@@ -138,6 +138,13 @@ export async function fetchDeployedApiSchemaSdl(
 }
 
 /**
+ * The text the Commerce Integration Layer sends with the 404 for a project that has
+ * published nothing (octolog server). The CLI matches on it, so a server-side rewording
+ * silently degrades the message to the generic one; a test pins it.
+ */
+export const NO_COMPOSED_SCHEMA_PUBLISHED = "No composed schema published";
+
+/**
  * GET the project's PUBLIC API SCHEMA — the shopper contract, with no merchant-hidden
  * fields (`GET …/schema/public`). It is the published composition, so it includes the
  * deployed extension and can lag a republish. Unlike `/schema/api`, it needs only the
@@ -154,7 +161,7 @@ export async function fetchPublicApiSchemaSdl(
   const url = `${projectUrl(baseUrl, projectKey)}/schema/public`;
   const res = await authFetch(url, { headers: { accept: "text/plain" } });
   const text = await res.text();
-  if (res.status === 404 && text.includes("No composed schema published")) {
+  if (res.status === 404 && text.includes(NO_COMPOSED_SCHEMA_PUBLISHED)) {
     throw new Error(`project '${projectKey}' has no composed schema published yet`);
   }
   if (!res.ok) {
