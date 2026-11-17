@@ -72,7 +72,7 @@ of them from your login Region — you normally set nothing.
 
 | Edge | Derived host | Serves | Override |
 | --- | --- | --- | --- |
-| Extensions | `https://extensions.integration-layer.<region>.commercetools.com` | the `manage_project` routes: `/<project>/main/subgraph` (and `/subgraph/graphql`, the core subgraph the local gateway routes to), `/<project>/main/extension/*`, config | `--integration-layer-url` / `INTEGRATION_LAYER_URL` |
+| Extensions | `https://extensions.integration-layer.<region>.commercetools.com` | the `manage_project` routes: `/<project>/main/subgraph` (and `/subgraph/graphql`, the core subgraph the local gateway routes to), `/<project>/main/extension/*`, config; and `/<project>/main/schema/public` (the public API schema), the one route a view-only client can read | `--integration-layer-url` / `INTEGRATION_LAYER_URL` |
 | Experience API (router) | `https://graphql.integration-layer.<region>.commercetools.com` | `/<project>/main/graphql` — the shopper GraphQL API, where operations run | — |
 | Identity API | `https://auth.integration-layer.<region>.commercetools.com` | `POST /<project>/main/session` — session minting | — |
 
@@ -647,12 +647,18 @@ read-only from here, so a host you have allowed can still be blocked above you.
 ### `schema fetch`
 
 ```
-commercetools integration-layer schema fetch [--out f]
+commercetools integration-layer schema fetch [--public] [--out f]
 ```
 
 Prints the Project's core-subgraph SDL — the input your extension composes against — to
 stdout, or writes it to a file. Useful for editor autocompletion, and for diffing what
 changed under you.
+
+With `--public` it prints the Project's public API schema instead: what a shopper can
+query, with no hidden fields. It is the published composition, so it includes the
+deployed extension, not the one in your working directory, and can lag until the next
+republish. Use it to check that your
+storefront's operations are valid against the Project.
 
 ### `config`
 

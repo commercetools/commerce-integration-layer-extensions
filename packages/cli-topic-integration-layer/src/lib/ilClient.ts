@@ -114,8 +114,8 @@ export async function fetchSubgraphSdl(
  *
  * This is the authenticated replacement for introspecting the public edge: the
  * router runs `introspection: false`, so the composed graph is read here, over the
- * same `manage_project` boundary as `/subgraph`. 404 means the project has never
- * published a composable version.
+ * same `manage_project` boundary as `/subgraph`. A 404 with the `SchemaNotPublished`
+ * code means the project has never published a composable version.
  */
 export async function fetchDeployedApiSchemaSdl(
   baseUrl: string,
@@ -125,7 +125,7 @@ export async function fetchDeployedApiSchemaSdl(
   const url = `${projectUrl(baseUrl, projectKey)}/schema/api`;
   const res = await authFetch(url, { headers: { accept: "text/plain" } });
   const text = await res.text();
-  if (res.status === 404) {
+  if (res.status === 404 && isSchemaNotPublished(text)) {
     throw new Error(
       `project '${projectKey}' has no composed schema published yet — publish one from the ` +
         `Merchant Center console (Schema → Refresh schema), or drop --deployed to compose locally`,
@@ -133,6 +133,44 @@ export async function fetchDeployedApiSchemaSdl(
   }
   if (!res.ok) {
     throw new Error(`could not fetch the deployed composed schema (${res.status}) from ${url}: ${text}`);
+  }
+  return text;
+}
+
+/** The 404 for a project that has published nothing carries this error code. */
+const SCHEMA_NOT_PUBLISHED_CODE = "SchemaNotPublished";
+
+function isSchemaNotPublished(body: string): boolean {
+  try {
+    const { errors } = JSON.parse(body) as { errors?: { code?: unknown }[] };
+    return errors?.some((e) => e.code === SCHEMA_NOT_PUBLISHED_CODE) ?? false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * GET the project's PUBLIC API SCHEMA — the shopper contract, with no merchant-hidden
+ * fields (`GET …/schema/public`). It is the published composition, so it includes the
+ * deployed extension and can lag a republish. Unlike `/schema/api`, it needs only the
+ * view scope.
+ *
+ * A 404 can mean the project has published nothing, or that the Commerce Integration
+ * Layer does not serve the route. Only the first carries the `SchemaNotPublished` code.
+ */
+export async function fetchPublicApiSchemaSdl(
+  baseUrl: string,
+  projectKey: string,
+  authFetch: AuthFetch,
+): Promise<string> {
+  const url = `${projectUrl(baseUrl, projectKey)}/schema/public`;
+  const res = await authFetch(url, { headers: { accept: "text/plain" } });
+  const text = await res.text();
+  if (res.status === 404 && isSchemaNotPublished(text)) {
+    throw new Error(`project '${projectKey}' has no composed schema published yet`);
+  }
+  if (!res.ok) {
+    throw new Error(`could not fetch the public API schema (${res.status}) from ${url}: ${text}`);
   }
   return text;
 }
