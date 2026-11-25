@@ -1,5 +1,15 @@
 # @commercetools/cli-topic-integration-layer
 
+## 1.4.0
+
+### Minor Changes
+
+- 5159a29: `schema fetch --public` prints the Project's public API schema, the schema a shopper can query, with no hidden fields.
+
+### Patch Changes
+
+- 8506716: `extension serve --gateway` and `--all` reach the Commerce Integration Layer's core subgraph through the Extensions edge (`/<project>/main/subgraph/graphql`), authenticated with your login. `--integration-layer-url` now redirects these calls too. Session minting stays on the Identity API host.
+
 ## 1.3.1
 
 ### Patch Changes
